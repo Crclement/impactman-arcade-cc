@@ -1,0 +1,17 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "devDependencies": {
+    "nuxt": "3.0.0-rc.11"
+  },
+  "dependencies": {
+    "@mailchimp/mailchimp_marketing": "^3.0.78",
+    "axios": "^1.0.0"
+  }
+}
