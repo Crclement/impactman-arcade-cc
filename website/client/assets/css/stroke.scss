@@ -1,0 +1,56 @@
+@function text-stroke($size: 2, $color: #fff, $correction: 0) {
+    $radius: $size - $correction;
+    $stroke: ();
+
+    @for $i from -$size through $size {
+        @for $k from -$size through $size {
+
+            $x: $k;
+            $y: $i;
+
+            @if $k >0 {
+                $x: $k - 0.5;
+            }
+
+            @else if $k < 0 {
+                $x: $k + 0.5;
+            }
+
+            @if $i >0 {
+                $y: $i - 0.5;
+            }
+
+            @else if $i < 0 {
+                $y: $i + 0.5;
+            }
+
+            @if ($x*$x + $y*$y <=$radius*$radius) {
+                $stroke: append($stroke, $i*1px $k*1px 0 $color, comma);
+            }
+        }
+    }
+
+    @return $stroke;
+}
+
+@mixin text-stroke($size: 2, $color: #fff, $correction: 0) {
+    text-shadow: text-stroke($size, $color, $correction);
+}
+
+.stroke-2 {
+    text-shadow: text-stroke(2, #16124f),
+    -2px 4px 0 #5934b5,
+    2px 4px 0 #5934b5,
+    -2px 8px 0 #000,
+    2px 8px 0 #000,
+    
+}
+
+.stroke-4 {
+    -webkit-text-stroke: 2px #16124f;
+    text-shadow: text-stroke(4, #16124f),
+    -4px 8px 0 #5934b5,
+    4px 8px 0 #5934b5,
+    -4px 12px 0 #000,
+    4px 12px 0 #000,
+}

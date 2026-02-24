@@ -1,129 +1,61 @@
 <template>
-  <div class="hero" :class="{ 'is-active': isActive }">
-    <div class="impact-arcade-wrapper">
-      <img class="arcade" src="assets/images/arcade-right.svg" />
-      <div class="arcade-text">
-        <img v-if="isMobile" src="assets/images/mobile-impact-arcade.png" />
-        <img v-else src="assets/images/impact-arcade.png" />
-        <h3>Launching 2023</h3>
+  <div class="homepage__gradient-bg">
+    <img src="/images/homepage/hero/bg.svg" class="absolute w-full -top-16 z-0 hidden md:block"/>
+    <div class="absolute w-full top-[40px] z-0 homepage__image-bg block md:hidden"></div>
+    <div class="">
+      <div class="container">
+        <TemplatesHero />
+
+        <TemplatesPlayGames />
+
+        <TemplatesCasualGames />
+
+        <TemplatesGameSelector class="mb-[120px]" />
+
+        <MoleculesSectionHeadingAnimated
+          image-icon-src="/images/coins.svg"
+          image-icon-width="130"
+          image-icon-height="58"
+          image-icon-max-width="224"
+          class="mb-7"
+        />
+
+        <MoleculesMarqueeGamesChangeWorld class="mb-10 xl:mb-[155px]" />
+
+        <TemplatesHowItWorks />
+
+        <MoleculesMarqueePlayImpact class="mb-6" />
+
+        <TemplatesScoreboard class="mb-[142px] xl:mb-[101px]"/>
+
+        <TemplatesOurVision class="mb-[15px] xl:mb-[18px]"/>
+
+        <TemplatesRoadmap class="mb-[18px] xl:mb-[14px]"/>
+
+        <TemplatesFooter class="mb-[18px] xl:mb-[15px]" />
+
+        <TemplatesHaveFun/>
       </div>
-      <img class="arcade" src="assets/images/arcade-left.svg" />
-    </div>
-    <div class="form-container">
-      <EmailForm />
     </div>
   </div>
-  <img src="assets/images/gradient.jpeg" class="gradient" />
 </template>
 
 <script lang="ts" setup>
-import { ref, onBeforeUnmount, onMounted } from "vue";
 
-const isMobile = ref(true);
-const isActive = ref(false);
-
-onMounted(() => {
-  checkIsMobile();
-  window.addEventListener("resize", checkIsMobile, true);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener("resize", checkIsMobile, true);
-});
-
-function checkIsMobile(): void {
-  isMobile.value = window.innerWidth < 768;
-  nextTick(() => (isActive.value = true));
-}
 </script>
 
-<style scoped>
-.hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  position: relative;
+<style lang="sass" scoped>
+.homepage__gradient-bg
+  background: linear-gradient(157.64deg, #B7DDE7 12.88%, #FAE5ED 66.19%)
 
-  width: 100%;
-  height: fit-content;
-  min-height: 100vh;
-
-  overflow: hidden;
-
-  opacity: 0;
-  transition: opacity 300ms ease-in-out;
-}
-
-.hero.is-active {
-  opacity: 1;
-}
-
-.impact-arcade-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3rem;
-}
-
-.arcade {
-  width: 100%;
-  max-width: 150px;
-}
-
-.arcade-text {
-  position: relative;
-}
-
-.arcade-text img {
-  width: 100%;
-  max-width: 600px;
-  object-fit: contain;
-}
-
-.arcade-text h3 {
-  position: absolute;
-  left: 50%;
-  translate: -50%;
-  white-space: nowrap;
-
-  font-weight: 700;
-  font-size: 24px;
-}
-
-.form-container {
-  width: 100%;
-  margin-top: 5rem;
-}
-
-.gradient {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-
-  z-index: -1;
-}
-
-@media only screen and (max-width: 768px) {
-  .impact-arcade-wrapper {
-    gap: 1rem;
-  }
-  .arcade {
-    width: 100%;
-    max-width: 90px;
-    object-fit: contain;
-  }
-
-  .arcade-text img {
-    width: 100%;
-    object-fit: contain;
-  }
-
-  .form-container {
-    width: calc(100% - 2rem);
-    margin: 7rem auto 0;
-  }
-}
+.homepage__image-bg
+  width: 928.11px
+  height: 394.15px
+  background: url(/images/homepage/hero/bg.svg)
+  background-repeat: no-repeat
+  background-size: cover
+  background-position: top left
+  @screen xl
+    width: 100%
+    height: 611.15px
 </style>

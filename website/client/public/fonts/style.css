@@ -1,0 +1,44 @@
+@font-face {
+    font-family: 'Kontesa';
+    src: url('/fonts/Kontesa-Typeface-Bold.woff');
+    font-display: block;
+}
+
+.font-kontesa{
+    font-family: 'Kontesa';
+}
+
+@font-face {
+    font-family: 'Retro';
+    src: url('/fonts/Retro-Land-Mayhem.woff');
+    font-display: block;
+}
+
+.font-retro{
+    font-family: 'Retro';
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    font-weight: 500;
+    src: url('/fonts/Agrandir-500.woff');
+    font-display: block;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    font-weight: 700;
+    src: url('/fonts/Agrandir-700.woff');
+    font-display: block;
+}
+
+@font-face {
+    font-family: 'Agrandir';
+    font-weight: 800;
+    src: url('/fonts/Agrandir-800.woff');
+    font-display: block;
+}
+
+.font-agrandir{
+    font-family: 'Agrandir';
+}

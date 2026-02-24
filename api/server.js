@@ -9,7 +9,9 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static files from website/client/public
-app.use(express.static(path.join(__dirname, '..', 'website', 'client', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'website', 'client', 'public'), {
+  extensions: ['html']
+}));
 
 // ============================================
 // DATA STORES

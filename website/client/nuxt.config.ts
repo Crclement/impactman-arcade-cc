@@ -1,16 +1,21 @@
-// https://v3.nuxtjs.org/api/configuration/nuxt.config
 export default defineNuxtConfig({
-  title: "Impact Arcade",
-  target: "static",
-  app: {
-    head: {
-      link: [
-        {
-          rel: "icon",
-          type: "image/x-icon",
-          href: "/favicon.png",
-        },
-      ],
-    },
+  runtimeConfig: {
+    public: {
+      apiBase: process.env.API_URL || 'http://localhost:3000'
+    }
   },
-});
+
+  css: [
+    '~/assets/css/stroke.scss'
+  ],
+
+  modules: [
+    '@nuxtjs/tailwindcss',
+    '@pinia/nuxt',
+    '@vueuse/motion/nuxt'
+  ],
+
+  build: {
+    transpile: ['@headlessui/vue']
+  }
+})

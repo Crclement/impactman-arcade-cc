@@ -12,7 +12,7 @@
       :disabled="message === 'Loading...'"
     >
       Notify Me
-      <img src="assets/images/arrow-circle-right.svg" />
+      <img src="/images/arrow-circle-right.svg" />
     </button>
     <p class="submit-message">
       {{ message }}
