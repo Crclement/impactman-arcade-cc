@@ -1,6 +1,6 @@
 <template>
   <div class="rounded-lg unity-game relative w-full h-full bg-[#4D8BEC]">
-    <canvas v-if="gameStore.global.gameScreen !== 'gameover'" id="unity-canvas" class="rounded-lg" width=600 height=664></canvas>
+    <canvas v-show="gameStore.global.gameScreen !== 'gameover'" id="unity-canvas" class="rounded-lg" width=600 height=664></canvas>
   </div>
 </template>
 
