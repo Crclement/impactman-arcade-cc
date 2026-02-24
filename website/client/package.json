@@ -23,6 +23,7 @@
     "camelize-ts": "^3.0.0",
     "fontfaceobserver": "^2.3.0",
     "pusher-js": "^8.0.2",
+    "qrcode": "^1.5.4",
     "snakecase-keys": "^5.4.5"
   }
 }

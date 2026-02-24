@@ -26,6 +26,36 @@ const gameStats = new Map();
 // Global leaderboard (top scores across all consoles)
 const globalLeaderboard = [];
 
+// Game sessions (for QR code flow)
+const gameSessions = new Map();
+
+// Users
+const users = new Map();
+
+// User scores (userId -> array of scores)
+const userScores = new Map();
+
+// ============================================
+// HELPERS
+// ============================================
+
+function generateSessionCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No 0,O,1,I to avoid confusion
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+function generateUserId() {
+  return 'usr_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
+function generateToken() {
+  return Math.random().toString(36).substr(2) + Math.random().toString(36).substr(2);
+}
+
 // ============================================
 // TEST DATA INITIALIZATION
 // ============================================
@@ -230,6 +260,231 @@ app.post('/api/game/end', (req, res) => {
 });
 
 // ============================================
+// SESSION ENDPOINTS (QR Code Flow)
+// ============================================
+
+// Create a new game session (called at game over)
+app.post('/api/sessions', (req, res) => {
+  const { consoleId, raspiId, score, level, bags, plasticRemoved } = req.body;
+
+  if (!consoleId) {
+    return res.status(400).json({ error: 'consoleId required' });
+  }
+
+  // Generate unique session code
+  let code;
+  do {
+    code = generateSessionCode();
+  } while (gameSessions.has(code));
+
+  const session = {
+    code,
+    consoleId,
+    raspiId: raspiId || null,
+    score: score || 0,
+    level: level || 1,
+    bags: bags || 0,
+    plasticRemoved: plasticRemoved || 0,
+    claimed: false,
+    userId: null,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+  };
+
+  gameSessions.set(code, session);
+
+  console.log(`[${new Date().toISOString()}] Session created: ${code} | Console: ${consoleId} | Raspi: ${raspiId || 'N/A'} | Score: ${score}`);
+
+  res.json({
+    success: true,
+    code,
+    claimUrl: `/claim/${code}`,
+    session,
+  });
+});
+
+// Get session info
+app.get('/api/sessions/:code', (req, res) => {
+  const session = gameSessions.get(req.params.code.toUpperCase());
+
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  // Check if expired
+  if (new Date(session.expiresAt) < new Date()) {
+    return res.status(410).json({ error: 'Session expired' });
+  }
+
+  res.json(session);
+});
+
+// Claim a session (link to user account)
+app.post('/api/sessions/:code/claim', (req, res) => {
+  const { email, name } = req.body;
+  const code = req.params.code.toUpperCase();
+
+  if (!email) {
+    return res.status(400).json({ error: 'email required' });
+  }
+
+  const session = gameSessions.get(code);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  if (session.claimed) {
+    return res.status(400).json({ error: 'Session already claimed' });
+  }
+
+  if (new Date(session.expiresAt) < new Date()) {
+    return res.status(410).json({ error: 'Session expired' });
+  }
+
+  // Find or create user
+  let user = Array.from(users.values()).find(u => u.email === email.toLowerCase());
+
+  if (!user) {
+    const userId = generateUserId();
+    user = {
+      id: userId,
+      email: email.toLowerCase(),
+      name: name || email.split('@')[0],
+      createdAt: new Date().toISOString(),
+      totalScore: 0,
+      totalBags: 0,
+      gamesPlayed: 0,
+    };
+    users.set(userId, user);
+    userScores.set(userId, []);
+    console.log(`[${new Date().toISOString()}] New user: ${user.email} (${userId})`);
+  }
+
+  // Claim the session
+  session.claimed = true;
+  session.userId = user.id;
+  session.claimedAt = new Date().toISOString();
+
+  // Add score to user's history
+  const scoreEntry = {
+    sessionCode: code,
+    consoleId: session.consoleId,
+    score: session.score,
+    level: session.level,
+    bags: session.bags,
+    plasticRemoved: session.plasticRemoved,
+    playedAt: session.createdAt,
+    claimedAt: session.claimedAt,
+  };
+
+  const scores = userScores.get(user.id) || [];
+  scores.push(scoreEntry);
+  userScores.set(user.id, scores);
+
+  // Update user totals
+  user.totalScore += session.score;
+  user.totalBags += session.bags;
+  user.gamesPlayed += 1;
+  users.set(user.id, user);
+
+  // Generate auth token
+  const token = generateToken();
+
+  console.log(`[${new Date().toISOString()}] Session claimed: ${code} by ${user.email}`);
+
+  res.json({
+    success: true,
+    user,
+    token,
+    session,
+  });
+});
+
+// ============================================
+// USER ENDPOINTS
+// ============================================
+
+// Login/signup with email
+app.post('/api/users/login', (req, res) => {
+  const { email, name } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'email required' });
+  }
+
+  // Find or create user
+  let user = Array.from(users.values()).find(u => u.email === email.toLowerCase());
+  let isNewUser = false;
+
+  if (!user) {
+    const userId = generateUserId();
+    user = {
+      id: userId,
+      email: email.toLowerCase(),
+      name: name || email.split('@')[0],
+      createdAt: new Date().toISOString(),
+      totalScore: 0,
+      totalBags: 0,
+      gamesPlayed: 0,
+    };
+    users.set(userId, user);
+    userScores.set(userId, []);
+    isNewUser = true;
+    console.log(`[${new Date().toISOString()}] New user signup: ${user.email}`);
+  }
+
+  const token = generateToken();
+
+  res.json({
+    success: true,
+    user,
+    token,
+    isNewUser,
+  });
+});
+
+// Get user by ID
+app.get('/api/users/:id', (req, res) => {
+  const user = users.get(req.params.id);
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const scores = userScores.get(user.id) || [];
+  const highScore = scores.length > 0 ? Math.max(...scores.map(s => s.score)) : 0;
+
+  res.json({
+    ...user,
+    highScore,
+    scores: scores.slice(-10).reverse(), // Last 10 games
+  });
+});
+
+// Get user's score history
+app.get('/api/users/:id/scores', (req, res) => {
+  const user = users.get(req.params.id);
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const scores = userScores.get(user.id) || [];
+
+  res.json({
+    user,
+    scores: scores.reverse(),
+    stats: {
+      totalGames: scores.length,
+      totalScore: user.totalScore,
+      totalBags: user.totalBags,
+      highScore: scores.length > 0 ? Math.max(...scores.map(s => s.score)) : 0,
+      avgScore: scores.length > 0 ? Math.floor(user.totalScore / scores.length) : 0,
+    },
+  });
+});
+
+// ============================================
 // DATA RETRIEVAL ENDPOINTS
 // ============================================
 
@@ -335,10 +590,6 @@ app.get('/api/game/:consoleId', (req, res) => {
 
   res.json(stats);
 });
-
-// ============================================
-// HELPERS
-// ============================================
 
 function formatLastSeen(ms) {
   if (ms < 60000) return 'Just now';
