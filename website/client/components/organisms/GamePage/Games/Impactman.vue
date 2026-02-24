@@ -23,14 +23,31 @@
 
     </div>
     <div v-if="store.global.gameScreen === 'menu'"
-      class="absolute left-1/2 -translate-x-1/2 bottom-12 flex justify-center flex-col items-center">
+      class="absolute left-1/2 -translate-x-1/2 bottom-8 flex justify-center flex-col items-center">
+
+      <!-- Login QR Code Section -->
+      <div class="bg-white/95 rounded-xl p-4 mb-4 text-center shadow-lg">
+        <p class="text-[#16114F] font-bold text-sm mb-2">
+          {{ loggedInUser ? `Welcome back, ${loggedInUser.name}!` : 'Scan to save your scores' }}
+        </p>
+        <div class="flex items-center justify-center gap-3">
+          <img :src="loginQrUrl" alt="Login QR" class="w-20 h-20 rounded" />
+          <div class="text-left">
+            <p class="text-xs text-gray-500">Console #{{ consoleId }}</p>
+            <p class="text-xs text-gray-500">Raspi #{{ raspiId }}</p>
+            <p v-if="loggedInUser" class="text-xs text-green-600 font-bold mt-1">Logged In</p>
+            <p v-else class="text-xs text-gray-400 mt-1">Scan with phone</p>
+          </div>
+        </div>
+      </div>
+
       <button
         @click="() => store.StartGame()"
         class="button-play w-48 font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
         <span class="text-play">Play</span>
       </button>
 
-      <div class="text-[#FCF252] text-center font-bold whitespace-nowrap	mt-5">
+      <div class="text-[#FCF252] text-center font-bold whitespace-nowrap mt-4 text-sm">
         WARNING: THIS GAME REMOVES REAL-WORLD OCEAN PLASTIC!
       </div>
     </div>
@@ -42,6 +59,34 @@
 import { useGameStore } from '~~/store/game';
 
 const store = useGameStore()
+
+// Console identification
+const consoleId = ref(process.client ? (localStorage.getItem('consoleId') || 'IMP-001') : 'IMP-001')
+const raspiId = ref(process.client ? (localStorage.getItem('raspiId') || 'RPI-001') : 'RPI-001')
+
+// Logged in user state
+const loggedInUser = ref<any>(null)
+
+// Login QR URL - links to login page with console info
+const loginQrUrl = computed(() => {
+  const baseUrl = process.client ? window.location.origin : ''
+  const loginUrl = `${baseUrl}/login?console=${consoleId.value}&raspi=${raspiId.value}`
+  return `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(loginUrl)}`
+})
+
+// Check for logged in user on mount
+onMounted(() => {
+  if (process.client) {
+    const savedUser = localStorage.getItem('impactarcade_user')
+    if (savedUser) {
+      try {
+        loggedInUser.value = JSON.parse(savedUser)
+      } catch (e) {
+        console.error('Failed to parse saved user:', e)
+      }
+    }
+  }
+})
 
 // Watch sound state and notify Unity
 watch(() => store.sound, (soundOn) => {
