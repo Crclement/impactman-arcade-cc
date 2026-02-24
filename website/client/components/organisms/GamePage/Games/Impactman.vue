@@ -42,6 +42,16 @@
 import { useGameStore } from '~~/store/game';
 
 const store = useGameStore()
+
+// Watch sound state and notify Unity
+watch(() => store.sound, (soundOn) => {
+  if (store.unityInstance) {
+    store.unityInstance.SendMessage("GameManager", "OnWebMessage", JSON.stringify({
+      Event: "Sound",
+      Payload: { Enabled: soundOn }
+    }))
+  }
+})
 </script>
 
 <style lang="sass" scoped>
