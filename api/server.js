@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { sendWelcomeEmail, sendScoreClaimedEmail } = require('./email');
+const { createPayment, getSquareConfig, PLAY_PRICE_CENTS } = require('./payments');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -34,6 +36,9 @@ const users = new Map();
 
 // User scores (userId -> array of scores)
 const userScores = new Map();
+
+// User play credits (userId -> { freePlayUsed, credits, payments[] })
+const userCredits = new Map();
 
 // ============================================
 // HELPERS
@@ -281,6 +286,8 @@ app.post('/api/sessions', (req, res) => {
     code,
     consoleId,
     raspiId: raspiId || null,
+    eventId: req.body.eventId || null, // Event identifier (set via Fleet Manager)
+    eventDate: req.body.eventDate || null, // Event date
     score: score || 0,
     level: level || 1,
     bags: bags || 0,
@@ -369,6 +376,8 @@ app.post('/api/sessions/:code/claim', (req, res) => {
   const scoreEntry = {
     sessionCode: code,
     consoleId: session.consoleId,
+    eventId: session.eventId, // For tracking per-event scores
+    eventDate: session.eventDate,
     score: session.score,
     level: session.level,
     bags: session.bags,
@@ -389,6 +398,11 @@ app.post('/api/sessions/:code/claim', (req, res) => {
 
   // Generate auth token
   const token = generateToken();
+
+  // Send score claimed email
+  sendScoreClaimedEmail(user, session).catch(err => {
+    console.error('[API] Failed to send score claimed email:', err);
+  });
 
   console.log(`[${new Date().toISOString()}] Session claimed: ${code} by ${user.email}`);
 
@@ -434,6 +448,13 @@ app.post('/api/users/login', (req, res) => {
   }
 
   const token = generateToken();
+
+  // Send welcome email for new users
+  if (isNewUser) {
+    sendWelcomeEmail(user).catch(err => {
+      console.error('[API] Failed to send welcome email:', err);
+    });
+  }
 
   res.json({
     success: true,
@@ -481,6 +502,136 @@ app.get('/api/users/:id/scores', (req, res) => {
       highScore: scores.length > 0 ? Math.max(...scores.map(s => s.score)) : 0,
       avgScore: scores.length > 0 ? Math.floor(user.totalScore / scores.length) : 0,
     },
+  });
+});
+
+// ============================================
+// PAYMENT ENDPOINTS (Apple Pay via Square)
+// ============================================
+
+// Get Square configuration for frontend
+app.get('/api/payments/config', (req, res) => {
+  const config = getSquareConfig();
+  res.json({
+    ...config,
+    pricePerPlay: PLAY_PRICE_CENTS / 100,
+    currency: 'USD',
+  });
+});
+
+// Get user's play credits
+app.get('/api/users/:id/credits', (req, res) => {
+  const user = users.get(req.params.id);
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const credits = userCredits.get(user.id) || {
+    freePlayUsed: false,
+    credits: 0,
+    payments: [],
+  };
+
+  // If they haven't used their free play, they have 1 available
+  const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
+
+  res.json({
+    userId: user.id,
+    freePlayUsed: credits.freePlayUsed,
+    paidCredits: credits.credits,
+    availablePlays,
+    payments: credits.payments.slice(-10).reverse(),
+  });
+});
+
+// Process Apple Pay payment
+app.post('/api/payments/apple-pay', async (req, res) => {
+  const { userId, sourceId } = req.body;
+
+  if (!userId || !sourceId) {
+    return res.status(400).json({ error: 'userId and sourceId required' });
+  }
+
+  const user = users.get(userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const result = await createPayment(sourceId, userId, user.email);
+
+  if (!result.success) {
+    return res.status(400).json({ error: result.error || 'Payment failed' });
+  }
+
+  // Add credit to user
+  const credits = userCredits.get(userId) || {
+    freePlayUsed: false,
+    credits: 0,
+    payments: [],
+  };
+
+  credits.credits += 1;
+  credits.payments.push({
+    paymentId: result.paymentId,
+    amount: PLAY_PRICE_CENTS / 100,
+    receiptUrl: result.receiptUrl,
+    createdAt: new Date().toISOString(),
+  });
+
+  userCredits.set(userId, credits);
+
+  console.log(`[${new Date().toISOString()}] Payment processed: ${user.email} now has ${credits.credits} credits`);
+
+  res.json({
+    success: true,
+    paymentId: result.paymentId,
+    receiptUrl: result.receiptUrl,
+    credits: credits.credits,
+    availablePlays: credits.freePlayUsed ? credits.credits : credits.credits + 1,
+  });
+});
+
+// Use a play credit (called when starting a game)
+app.post('/api/users/:id/use-credit', (req, res) => {
+  const user = users.get(req.params.id);
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const credits = userCredits.get(user.id) || {
+    freePlayUsed: false,
+    credits: 0,
+    payments: [],
+  };
+
+  // Check if they have any plays available
+  const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
+
+  if (availablePlays <= 0) {
+    return res.status(402).json({
+      error: 'No play credits available',
+      needsPayment: true,
+    });
+  }
+
+  // Use a credit
+  if (!credits.freePlayUsed) {
+    credits.freePlayUsed = true;
+    console.log(`[${new Date().toISOString()}] Free play used: ${user.email}`);
+  } else {
+    credits.credits -= 1;
+    console.log(`[${new Date().toISOString()}] Paid credit used: ${user.email} (${credits.credits} remaining)`);
+  }
+
+  userCredits.set(user.id, credits);
+
+  res.json({
+    success: true,
+    creditsRemaining: credits.credits,
+    freePlayUsed: credits.freePlayUsed,
+    availablePlays: credits.freePlayUsed ? credits.credits : credits.credits + 1,
   });
 });
 

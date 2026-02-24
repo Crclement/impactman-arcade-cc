@@ -134,6 +134,54 @@
         </div>
       </div>
 
+      <!-- Play Credits Section -->
+      <div class="mt-8">
+        <h2 class="text-[#D9FF69] font-bold text-xl mb-4 flex items-center gap-2">
+          <span>🎟️</span> Play Credits
+        </h2>
+        <div class="bg-white rounded-2xl p-6 shadow-lg">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-3xl font-bold text-[#16114F]">{{ credits.availablePlays }}</div>
+              <div class="text-sm text-gray-500">plays available</div>
+            </div>
+            <div class="text-right text-sm text-gray-400">
+              <div v-if="!credits.freePlayUsed" class="text-[#00DC82] font-bold">First play FREE!</div>
+              <div v-else>{{ credits.paidCredits }} paid credits</div>
+            </div>
+          </div>
+
+          <!-- Apple Pay Button -->
+          <div v-if="credits.availablePlays === 0 || credits.freePlayUsed" class="mt-4">
+            <p class="text-sm text-gray-600 mb-3 text-center">Add more plays for $1 each</p>
+
+            <!-- Apple Pay Loading -->
+            <div v-if="paymentLoading" class="flex justify-center py-4">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#16114F]"></div>
+            </div>
+
+            <!-- Apple Pay Button Container -->
+            <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container"></div>
+
+            <!-- Fallback for non-Apple Pay -->
+            <div v-else class="text-center py-4">
+              <p class="text-sm text-gray-500">Apple Pay not available on this device</p>
+              <p class="text-xs text-gray-400 mt-1">Visit on iPhone or Safari to use Apple Pay</p>
+            </div>
+
+            <!-- Payment Error -->
+            <div v-if="paymentError" class="mt-3 text-center text-red-500 text-sm">
+              {{ paymentError }}
+            </div>
+
+            <!-- Payment Success -->
+            <div v-if="paymentSuccess" class="mt-3 text-center text-[#00DC82] font-bold">
+              Payment successful! Credit added.
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Impact Footer -->
       <div class="mt-8 text-center">
         <div class="bg-gradient-to-r from-[#00DC82]/20 to-[#4D8BEC]/20 rounded-xl p-6 border border-white/10">
@@ -165,10 +213,24 @@ const gameStats = ref<any>({
   bestLevel: 1,
 })
 
+// Payment state
+const credits = ref({
+  freePlayUsed: false,
+  paidCredits: 0,
+  availablePlays: 1, // Default to 1 (free play)
+})
+const paymentLoading = ref(false)
+const paymentError = ref<string | null>(null)
+const paymentSuccess = ref(false)
+const applePaySupported = ref(false)
+const squarePayments = ref<any>(null)
+const applePay = ref<any>(null)
+
 onMounted(async () => {
+  const apiBase = config.public.apiBase || 'http://localhost:3001'
+
   try {
     const userId = route.params.id as string
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
     const res = await $fetch<any>(`${apiBase}/api/users/${userId}/scores`)
 
     userData.value = res.user
@@ -185,12 +247,134 @@ onMounted(async () => {
         bestLevel: Math.max(...res.scores.map((s: any) => s.level || 1)),
       }
     }
+
+    // Fetch credits
+    const creditsRes = await $fetch<any>(`${apiBase}/api/users/${userId}/credits`)
+    credits.value = creditsRes
   } catch (e: any) {
     error.value = e.data?.error || 'Failed to load dashboard'
   } finally {
     loading.value = false
   }
+
+  // Initialize Square Web Payments SDK for Apple Pay
+  if (process.client) {
+    await initializeApplePay()
+  }
 })
+
+async function initializeApplePay() {
+  const apiBase = config.public.apiBase || 'http://localhost:3001'
+
+  try {
+    // Get Square config
+    const paymentConfig = await $fetch<any>(`${apiBase}/api/payments/config`)
+
+    if (!paymentConfig.applicationId) {
+      console.log('Square not configured')
+      return
+    }
+
+    // Load Square SDK
+    if (!(window as any).Square) {
+      const script = document.createElement('script')
+      script.src = paymentConfig.environment === 'production'
+        ? 'https://web.squarecdn.com/v1/square.js'
+        : 'https://sandbox.web.squarecdn.com/v1/square.js'
+      script.onload = () => setupApplePay(paymentConfig)
+      document.head.appendChild(script)
+    } else {
+      await setupApplePay(paymentConfig)
+    }
+  } catch (e) {
+    console.error('Failed to initialize Apple Pay:', e)
+  }
+}
+
+async function setupApplePay(paymentConfig: any) {
+  try {
+    const payments = (window as any).Square.payments(
+      paymentConfig.applicationId,
+      paymentConfig.locationId
+    )
+    squarePayments.value = payments
+
+    // Check if Apple Pay is available
+    const applePayInstance = await payments.applePay({
+      countryCode: 'US',
+      currencyCode: 'USD',
+      total: {
+        amount: '1.00',
+        label: 'Impact Arcade Play Credit',
+      },
+    })
+
+    if (applePayInstance) {
+      applePay.value = applePayInstance
+      applePaySupported.value = true
+
+      // Render Apple Pay button
+      await nextTick()
+      const container = document.getElementById('apple-pay-button')
+      if (container) {
+        container.innerHTML = ''
+        const button = document.createElement('div')
+        button.className = 'apple-pay-button apple-pay-button-black'
+        button.style.cssText = 'width: 100%; height: 48px; cursor: pointer; border-radius: 8px;'
+        button.onclick = handleApplePayClick
+        container.appendChild(button)
+      }
+    }
+  } catch (e) {
+    console.log('Apple Pay not available:', e)
+    applePaySupported.value = false
+  }
+}
+
+async function handleApplePayClick() {
+  if (!applePay.value || !userData.value) return
+
+  paymentLoading.value = true
+  paymentError.value = null
+  paymentSuccess.value = false
+
+  try {
+    // Tokenize the payment
+    const tokenResult = await applePay.value.tokenize()
+
+    if (tokenResult.status === 'OK') {
+      // Send to our API
+      const apiBase = config.public.apiBase || 'http://localhost:3001'
+      const result = await $fetch<any>(`${apiBase}/api/payments/apple-pay`, {
+        method: 'POST',
+        body: {
+          userId: userData.value.id,
+          sourceId: tokenResult.token,
+        },
+      })
+
+      if (result.success) {
+        paymentSuccess.value = true
+        credits.value.paidCredits = result.credits
+        credits.value.availablePlays = result.availablePlays
+
+        // Reset success message after 3 seconds
+        setTimeout(() => {
+          paymentSuccess.value = false
+        }, 3000)
+      } else {
+        paymentError.value = result.error || 'Payment failed'
+      }
+    } else {
+      paymentError.value = tokenResult.errors?.[0]?.message || 'Payment cancelled'
+    }
+  } catch (e: any) {
+    console.error('Apple Pay error:', e)
+    paymentError.value = e.data?.error || 'Payment failed'
+  } finally {
+    paymentLoading.value = false
+  }
+}
 
 function formatDate(dateStr: string) {
   if (!dateStr) return ''
@@ -201,3 +385,16 @@ function formatDate(dateStr: string) {
   })
 }
 </script>
+
+<style scoped>
+/* Apple Pay button styling */
+.apple-pay-button {
+  -webkit-appearance: -apple-pay-button;
+  -apple-pay-button-type: buy;
+  -apple-pay-button-style: black;
+}
+
+.apple-pay-button-container {
+  min-height: 48px;
+}
+</style>
