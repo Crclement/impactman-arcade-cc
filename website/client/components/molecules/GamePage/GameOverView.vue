@@ -207,6 +207,9 @@ async function createSession() {
 }
 
 const PlayAgain = () => {
+  // Clear logged-in user so next person must scan QR
+  gameStore.clearUser()
+
   // Reset game state
   gameStore.$patch({
     global: {
