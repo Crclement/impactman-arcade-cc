@@ -2,11 +2,20 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
+const WebSocket = require('ws');
 const { sendWelcomeEmail, sendScoreClaimedEmail } = require('./email');
 const { createPayment, getSquareConfig, PLAY_PRICE_CENTS } = require('./payments');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Create HTTP server for both Express and WebSocket
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Track connected consoles (consoleId -> WebSocket)
+const connectedConsoles = new Map();
 
 app.use(cors());
 app.use(express.json());
@@ -40,6 +49,104 @@ const userScores = new Map();
 
 // User play credits (userId -> { freePlayUsed, credits, payments[] })
 const userCredits = new Map();
+
+// Pending game starts (consoleId -> { userId, expiresAt })
+const pendingGameStarts = new Map();
+
+// ============================================
+// WEBSOCKET HANDLING
+// ============================================
+
+wss.on('connection', (ws, req) => {
+  let consoleId = null;
+
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message);
+
+      // Console registration
+      if (data.type === 'register') {
+        consoleId = data.consoleId;
+        connectedConsoles.set(consoleId, ws);
+        console.log(`[WS] Console connected: ${consoleId}`);
+
+        // Send acknowledgment
+        ws.send(JSON.stringify({ type: 'registered', consoleId }));
+      }
+
+      // Game started confirmation
+      if (data.type === 'gameStarted') {
+        const pending = pendingGameStarts.get(consoleId);
+        if (pending) {
+          console.log(`[WS] Game started on ${consoleId} for user ${pending.userId}`);
+          pendingGameStarts.delete(consoleId);
+        }
+      }
+
+      // Game ended - save score
+      if (data.type === 'gameEnded') {
+        const { userId, score, level, bags } = data;
+        if (userId) {
+          // Auto-save score for logged-in player
+          const user = users.get(userId);
+          if (user) {
+            const scoreEntry = {
+              consoleId,
+              score: score || 0,
+              level: level || 1,
+              bags: bags || 0,
+              plasticRemoved: (bags || 0) * 0.1,
+              playedAt: new Date().toISOString(),
+            };
+
+            const scores = userScores.get(userId) || [];
+            scores.push(scoreEntry);
+            userScores.set(userId, scores);
+
+            // Update user totals
+            user.totalScore += score || 0;
+            user.totalBags += bags || 0;
+            user.gamesPlayed += 1;
+            users.set(userId, user);
+
+            console.log(`[WS] Score saved for ${user.email}: ${score} pts`);
+
+            // Send score saved confirmation to console
+            ws.send(JSON.stringify({
+              type: 'scoreSaved',
+              userId,
+              score,
+              userName: user.name,
+            }));
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[WS] Error parsing message:', e);
+    }
+  });
+
+  ws.on('close', () => {
+    if (consoleId) {
+      connectedConsoles.delete(consoleId);
+      console.log(`[WS] Console disconnected: ${consoleId}`);
+    }
+  });
+
+  ws.on('error', (err) => {
+    console.error('[WS] Error:', err);
+  });
+});
+
+// Helper: Send message to specific console
+function sendToConsole(consoleId, message) {
+  const ws = connectedConsoles.get(consoleId);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(message));
+    return true;
+  }
+  return false;
+}
 
 // ============================================
 // HELPERS
@@ -637,6 +744,138 @@ app.post('/api/users/:id/use-credit', (req, res) => {
 });
 
 // ============================================
+// CONSOLE GAME CONTROL (Phone → Console)
+// ============================================
+
+// Start game on a console (called from phone after scanning QR)
+app.post('/api/consoles/:consoleId/start-game', (req, res) => {
+  const { consoleId } = req.params;
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
+  }
+
+  const user = users.get(userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  // Check if console is connected
+  if (!connectedConsoles.has(consoleId)) {
+    return res.status(404).json({ error: 'Console not connected' });
+  }
+
+  // Check credits
+  const credits = userCredits.get(userId) || {
+    freePlayUsed: false,
+    credits: 0,
+    payments: [],
+  };
+
+  const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
+
+  if (availablePlays <= 0) {
+    return res.status(402).json({
+      error: 'No play credits available',
+      needsPayment: true,
+    });
+  }
+
+  // Use a credit
+  if (!credits.freePlayUsed) {
+    credits.freePlayUsed = true;
+    console.log(`[${new Date().toISOString()}] Free play used: ${user.email} on ${consoleId}`);
+  } else {
+    credits.credits -= 1;
+    console.log(`[${new Date().toISOString()}] Paid credit used: ${user.email} on ${consoleId} (${credits.credits} remaining)`);
+  }
+  userCredits.set(userId, credits);
+
+  // Store pending game start
+  pendingGameStarts.set(consoleId, {
+    userId,
+    userName: user.name,
+    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Send message to console to show PLAY button
+  const sent = sendToConsole(consoleId, {
+    type: 'readyToPlay',
+    userId,
+    userName: user.name,
+  });
+
+  if (!sent) {
+    return res.status(500).json({ error: 'Failed to communicate with console' });
+  }
+
+  console.log(`[${new Date().toISOString()}] Ready to play: ${user.email} on ${consoleId}`);
+
+  res.json({
+    success: true,
+    message: 'Console is ready! Press PLAY on the machine.',
+    creditsRemaining: credits.credits,
+    availablePlays: credits.freePlayUsed ? credits.credits : credits.credits + 1,
+  });
+});
+
+// Start game as guest (no account needed for first free play)
+app.post('/api/consoles/:consoleId/start-guest', (req, res) => {
+  const { consoleId } = req.params;
+
+  // Check if console is connected
+  if (!connectedConsoles.has(consoleId)) {
+    return res.status(404).json({ error: 'Console not connected' });
+  }
+
+  // Generate guest session ID
+  const guestSessionId = 'guest_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+
+  // Store pending game start
+  pendingGameStarts.set(consoleId, {
+    guestSessionId,
+    isGuest: true,
+    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Send message to console to show PLAY button
+  const sent = sendToConsole(consoleId, {
+    type: 'readyToPlay',
+    guestSessionId,
+    isGuest: true,
+  });
+
+  if (!sent) {
+    return res.status(500).json({ error: 'Failed to communicate with console' });
+  }
+
+  console.log(`[${new Date().toISOString()}] Guest ready to play on ${consoleId} (${guestSessionId})`);
+
+  res.json({
+    success: true,
+    guestSessionId,
+    message: 'Console is ready! Press PLAY on the machine.',
+  });
+});
+
+// Check console status (for phone to poll)
+app.get('/api/consoles/:consoleId/status', (req, res) => {
+  const { consoleId } = req.params;
+
+  const isConnected = connectedConsoles.has(consoleId);
+  const pending = pendingGameStarts.get(consoleId);
+  const status = consoleStatuses.get(consoleId);
+
+  res.json({
+    consoleId,
+    connected: isConnected,
+    pendingGame: pending ? { userId: pending.userId, userName: pending.userName } : null,
+    status: status?.status || 'unknown',
+  });
+});
+
+// ============================================
 // DATA RETRIEVAL ENDPOINTS
 // ============================================
 
@@ -764,13 +1003,30 @@ function formatDuration(ms) {
   return `${seconds}s`;
 }
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Impact Arcade API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      consoles: '/api/consoles',
+      leaderboard: '/api/leaderboard',
+      users: '/api/users',
+      sessions: '/api/sessions',
+    },
+  });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Impactman API running on port ${PORT}`);
+  console.log(`WebSocket: ws://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Consoles: http://localhost:${PORT}/api/consoles`);
   console.log(`Leaderboard: http://localhost:${PORT}/api/leaderboard`);

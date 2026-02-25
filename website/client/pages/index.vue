@@ -41,7 +41,8 @@
 </template>
 
 <script lang="ts" setup>
-
+// Redirect to game page (for kiosk mode)
+navigateTo('/games/impactman', { replace: true })
 </script>
 
 <style lang="sass" scoped>

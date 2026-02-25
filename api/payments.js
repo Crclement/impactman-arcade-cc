@@ -1,12 +1,12 @@
-const { Client, Environment } = require('square');
+const { SquareClient, SquareEnvironment } = require('square');
 
 // Initialize Square client
 const squareClient = process.env.SQUARE_ACCESS_TOKEN
-  ? new Client({
-      accessToken: process.env.SQUARE_ACCESS_TOKEN,
+  ? new SquareClient({
+      token: process.env.SQUARE_ACCESS_TOKEN,
       environment: process.env.SQUARE_ENVIRONMENT === 'production'
-        ? Environment.Production
-        : Environment.Sandbox,
+        ? SquareEnvironment.Production
+        : SquareEnvironment.Sandbox,
     })
   : null;
 
@@ -30,7 +30,7 @@ async function createPayment(sourceId, userId, userEmail) {
   }
 
   try {
-    const { result } = await squareClient.paymentsApi.createPayment({
+    const response = await squareClient.payments.create({
       sourceId, // This comes from Apple Pay tokenization
       idempotencyKey: generateIdempotencyKey(),
       amountMoney: {
@@ -43,12 +43,12 @@ async function createPayment(sourceId, userId, userEmail) {
       buyerEmailAddress: userEmail,
     });
 
-    console.log(`[Payments] Payment successful: ${result.payment.id} for ${userEmail}`);
+    console.log(`[Payments] Payment successful: ${response.payment.id} for ${userEmail}`);
 
     return {
       success: true,
-      paymentId: result.payment.id,
-      receiptUrl: result.payment.receiptUrl,
+      paymentId: response.payment.id,
+      receiptUrl: response.payment.receiptUrl,
     };
   } catch (err) {
     console.error(`[Payments] Payment failed:`, err);
