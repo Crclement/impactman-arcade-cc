@@ -18,7 +18,7 @@
     "@headlessui/vue": "^0.0.0-insiders.4da0b3a",
     "@mailchimp/mailchimp_marketing": "^3.0.78",
     "@pinia/nuxt": "^0.4.6",
-    "@vueuse/motion": "^2.0.0-beta.25",
+    "@vueuse/motion": "^2.2.6",
     "axios": "^1.0.0",
     "camelize-ts": "^3.0.0",
     "fontfaceobserver": "^2.3.0",
