@@ -106,6 +106,18 @@ async function login() {
       localStorage.setItem('impactarcade_token', res.token)
       localStorage.setItem('impactarcade_user', JSON.stringify(res.user))
     }
+
+    // Notify the console that this user has logged in
+    if (consoleId.value) {
+      try {
+        await $fetch(`${apiBase}/api/consoles/${consoleId.value}/login`, {
+          method: 'POST',
+          body: { userId: res.user.id },
+        })
+      } catch (e) {
+        console.error('Failed to notify console:', e)
+      }
+    }
   } catch (e: any) {
     error.value = e.data?.error || 'Failed to login. Please try again.'
   } finally {

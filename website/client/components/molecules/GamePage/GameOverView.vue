@@ -210,6 +210,12 @@ const PlayAgain = () => {
   // Clear logged-in user so next person must scan QR
   gameStore.clearUser()
 
+  // Clear console login on API
+  const apiBase = config.public.apiBase || 'http://localhost:3001'
+  $fetch(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`, {
+    method: 'DELETE',
+  }).catch(() => {})
+
   // Reset game state
   gameStore.$patch({
     global: {

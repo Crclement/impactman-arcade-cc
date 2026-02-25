@@ -50,6 +50,9 @@ const userScores = new Map();
 // User play credits (userId -> { freePlayUsed, credits, payments[] })
 const userCredits = new Map();
 
+// Console login sessions (consoleId -> { user, loggedInAt })
+const consoleLogins = new Map();
+
 // Pending game starts (consoleId -> { userId, expiresAt })
 const pendingGameStarts = new Map();
 
@@ -932,6 +935,41 @@ app.get('/api/consoles/:consoleId/status', (req, res) => {
     pendingGame: pending ? { userId: pending.userId, userName: pending.userName } : null,
     status: status?.status || 'unknown',
   });
+});
+
+// Login user to a console (called from phone after scanning QR + logging in)
+app.post('/api/consoles/:consoleId/login', (req, res) => {
+  const { consoleId } = req.params;
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
+  }
+
+  const user = users.get(userId);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  consoleLogins.set(consoleId, {
+    user: { id: user.id, name: user.name, email: user.email },
+    loggedInAt: new Date().toISOString(),
+  });
+
+  console.log(`[${new Date().toISOString()}] User ${user.name} logged into console ${consoleId}`);
+  res.json({ success: true });
+});
+
+// Get logged-in user for a console (arcade polls this)
+app.get('/api/consoles/:consoleId/logged-in-user', (req, res) => {
+  const login = consoleLogins.get(req.params.consoleId);
+  res.json({ user: login?.user || null });
+});
+
+// Clear logged-in user from console (called when returning to menu)
+app.delete('/api/consoles/:consoleId/logged-in-user', (req, res) => {
+  consoleLogins.delete(req.params.consoleId);
+  res.json({ success: true });
 });
 
 // ============================================

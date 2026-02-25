@@ -26,14 +26,16 @@
       class="absolute left-1/2 -translate-x-1/2 bottom-8 flex flex-col items-center">
 
       <!-- Logged-in user greeting -->
-      <div v-if="store.loggedInUser" class="bg-white/95 rounded-lg px-4 py-2 mb-3 shadow-lg text-center">
-        <p class="text-[#16114F] font-bold text-sm">Welcome, {{ store.loggedInUser.name }}!</p>
+      <div v-if="store.loggedInUser" class="logged-in-badge bg-[#D9FF69] rounded-lg px-5 py-2 mb-3 shadow-lg text-center border-2 border-[#16114F]">
+        <p class="text-[#16114F] font-bold text-sm">{{ store.loggedInUser.name }}</p>
+        <p class="text-[#16114F]/60 text-xs">Scores will auto-save</p>
       </div>
 
       <!-- Play button and QR code inline -->
       <div class="flex items-center gap-4">
         <button
           @click="() => store.StartGame()"
+          :class="{ 'button-flash': store.loggedInUser }"
           class="button-play font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
           <span class="text-play">Play</span>
         </button>
@@ -92,6 +94,22 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
+const config = useRuntimeConfig()
+
+// Poll API for console login (user logs in on phone, arcade detects it)
+const pollForLogin = async () => {
+  if (store.global.gameScreen !== 'menu' || store.loggedInUser) return
+  try {
+    const apiBase = config.public.apiBase || 'http://localhost:3001'
+    const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`)
+    if (res.user && !store.loggedInUser) {
+      store.loggedInUser = res.user
+    }
+  } catch (e) {
+    // Silently ignore poll errors
+  }
+}
+
 // Load user and setup on mount
 onMounted(() => {
   if (process.client) {
@@ -99,6 +117,9 @@ onMounted(() => {
 
     // Add keyboard listener for arcade controls
     window.addEventListener('keydown', handleKeydown)
+
+    // Poll API for login changes every 2s
+    const loginPoll = setInterval(pollForLogin, 2000)
 
     // Auto-focus canvas periodically to ensure keyboard input works
     const focusInterval = setInterval(() => {
@@ -111,6 +132,7 @@ onMounted(() => {
     onUnmounted(() => {
       window.removeEventListener('keydown', handleKeydown)
       clearInterval(focusInterval)
+      clearInterval(loginPoll)
     })
   }
 })
@@ -140,5 +162,26 @@ watch(() => store.sound, (soundOn) => {
   &:active
     box-shadow: 0px 0px 0px #16114F
     transform: translateY(8px)
+
+.button-flash
+  animation: pulse-glow 1.5s ease-in-out infinite
+
+@keyframes pulse-glow
+  0%, 100%
+    box-shadow: 0px 8px 0px #16114F
+  50%
+    box-shadow: 0px 8px 0px #16114F, 0 0 20px #D9FF69, 0 0 40px #D9FF69
+
+.logged-in-badge
+  animation: slide-in 0.4s ease-out
+  box-shadow: 0px 3px 0px #16114F
+
+@keyframes slide-in
+  from
+    opacity: 0
+    transform: translateY(-10px)
+  to
+    opacity: 1
+    transform: translateY(0)
 </style>
 
