@@ -23,29 +23,21 @@
 
     </div>
     <div v-if="store.global.gameScreen === 'menu'"
-      class="absolute left-1/2 -translate-x-1/2 bottom-8 flex justify-center flex-col items-center">
+      class="absolute left-1/2 -translate-x-1/2 bottom-8 flex flex-col items-center">
 
-      <!-- Login QR Code Section -->
-      <div class="bg-white/95 rounded-xl p-4 mb-4 text-center shadow-lg">
-        <p class="text-[#16114F] font-bold text-sm mb-2">
-          {{ loggedInUser ? `Welcome back, ${loggedInUser.name}!` : 'Scan to save your scores' }}
-        </p>
-        <div class="flex items-center justify-center gap-3">
-          <img :src="loginQrUrl" alt="Login QR" class="w-20 h-20 rounded" />
-          <div class="text-left">
-            <p class="text-xs text-gray-500">Console #{{ consoleId }}</p>
-            <p class="text-xs text-gray-500">Raspi #{{ raspiId }}</p>
-            <p v-if="loggedInUser" class="text-xs text-green-600 font-bold mt-1">Logged In</p>
-            <p v-else class="text-xs text-gray-400 mt-1">Scan with phone</p>
-          </div>
+      <!-- Play button and QR code inline -->
+      <div class="flex items-center gap-4">
+        <button
+          @click="() => store.StartGame()"
+          class="button-play font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
+          <span class="text-play">Play</span>
+        </button>
+
+        <!-- QR Code Box -->
+        <div class="bg-white/95 rounded-lg p-2 shadow-lg">
+          <img :src="loginQrUrl" alt="Login QR" class="w-16 h-16 rounded" />
         </div>
       </div>
-
-      <button
-        @click="() => store.StartGame()"
-        class="button-play w-48 font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
-        <span class="text-play">Play</span>
-      </button>
 
       <div class="text-[#FCF252] text-center font-bold whitespace-nowrap mt-4 text-sm">
         WARNING: THIS GAME REMOVES REAL-WORLD OCEAN PLASTIC!
@@ -74,6 +66,30 @@ const loginQrUrl = computed(() => {
   return `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(loginUrl)}`
 })
 
+// Focus the Unity canvas for keyboard input
+const focusCanvas = () => {
+  const canvas = document.getElementById('unity-canvas')
+  if (canvas) {
+    canvas.focus()
+  }
+}
+
+// Handle keyboard events for arcade cabinet
+const handleKeydown = (e: KeyboardEvent) => {
+  // Spacebar or Enter to start game when on menu
+  if ((e.code === 'Space' || e.code === 'Enter') && store.global.gameScreen === 'menu') {
+    e.preventDefault()
+    store.StartGame()
+    // Focus canvas after starting
+    setTimeout(focusCanvas, 100)
+  }
+
+  // Keep canvas focused during gameplay
+  if (store.global.gameScreen === 'playing') {
+    focusCanvas()
+  }
+}
+
 // Check for logged in user on mount
 onMounted(() => {
   if (process.client) {
@@ -85,6 +101,22 @@ onMounted(() => {
         console.error('Failed to parse saved user:', e)
       }
     }
+
+    // Add keyboard listener for arcade controls
+    window.addEventListener('keydown', handleKeydown)
+
+    // Auto-focus canvas periodically to ensure keyboard input works
+    const focusInterval = setInterval(() => {
+      if (store.global.gameScreen === 'playing') {
+        focusCanvas()
+      }
+    }, 500)
+
+    // Cleanup on unmount
+    onUnmounted(() => {
+      window.removeEventListener('keydown', handleKeydown)
+      clearInterval(focusInterval)
+    })
   }
 })
 

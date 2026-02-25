@@ -52,10 +52,11 @@
             <!-- Play Again button -->
             <button
               @click="PlayAgain"
-              class="mt-6 bg-[#16114F] text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-[#2a2470] transition"
+              class="mt-6 bg-purple text-white px-12 py-4 rounded-xl font-bold text-2xl hover:bg-[#a855f7] transition border-4 border-[#16114F] shadow-[0_8px_0_#16114F] active:shadow-none active:translate-y-2"
             >
               Play Again
             </button>
+            <p class="text-gray-500 text-sm mt-3">Press SPACE to continue</p>
           </div>
         </div>
       </div>
@@ -88,9 +89,29 @@ const claimUrl = computed(() => {
   return `${baseUrl}/claim/${sessionCode.value}`
 })
 
+// Handle keyboard events for arcade cabinet
+const handleKeydown = (e: KeyboardEvent) => {
+  if (e.code === 'Space' || e.code === 'Enter') {
+    e.preventDefault()
+    PlayAgain()
+  }
+}
+
 // Create session on mount
 onMounted(() => {
   createSession()
+
+  // Add keyboard listener for arcade controls
+  if (process.client) {
+    window.addEventListener('keydown', handleKeydown)
+  }
+})
+
+// Cleanup
+onUnmounted(() => {
+  if (process.client) {
+    window.removeEventListener('keydown', handleKeydown)
+  }
 })
 
 async function createSession() {
@@ -151,4 +172,7 @@ const PlayAgain = () => {
 
 .bg-gradient-pink
   background: linear-gradient(180deg, #FFB8D9 0%, #FF8DC7 100%)
+
+.bg-purple
+  background-color: #9b5de5
 </style>

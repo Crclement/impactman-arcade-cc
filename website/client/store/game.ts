@@ -47,6 +47,11 @@ export const useGameStore = defineStore('game', {
     },
     StartGame(){
       this.unityInstance.SendMessage("StartManager", "LoadGame")
+      // Focus canvas for keyboard input (important for arcade cabinet)
+      setTimeout(() => {
+        const canvas = document.getElementById('unity-canvas')
+        if (canvas) canvas.focus()
+      }, 100)
     }
   },
   getters: {
