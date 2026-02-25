@@ -85,7 +85,8 @@ const tempClass = computed(() => {
     @apply bg-green
 
 .status-badge
-  @apply font-retro py-1 px-2 rounded-sm text-[0.65rem] uppercase text-navyBlue
+  @apply py-1 px-2 rounded-sm text-[0.65rem] uppercase text-navyBlue
+  font-family: 'Retro'
   border: 2px solid #16114F
   box-shadow: 0 2px 0 #16114F
 
@@ -104,10 +105,12 @@ const tempClass = computed(() => {
   box-shadow: 0 2px 0 #16114F
 
 .detail-label
-  @apply font-retro text-navyBlue text-[0.6rem] uppercase
+  @apply text-navyBlue text-[0.6rem] uppercase
+  font-family: 'Retro'
 
 .detail-value
-  @apply font-retro text-navyBlue text-[0.6rem] uppercase
+  @apply text-navyBlue text-[0.6rem] uppercase
+  font-family: 'Retro'
 
   &.hot
     color: #d94368

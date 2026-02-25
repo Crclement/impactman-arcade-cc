@@ -124,8 +124,10 @@ onUnmounted(() => {
     box-shadow: 0 5px 0 #16114F
 
 .stat-value
-  @apply font-retro text-xs text-navyBlue uppercase
+  @apply text-xs text-navyBlue uppercase
+  font-family: 'Retro'
 
 .stat-label
-  @apply font-retro text-xs text-navyBlue/70 uppercase
+  @apply text-xs text-navyBlue/70 uppercase
+  font-family: 'Retro'
 </style>
