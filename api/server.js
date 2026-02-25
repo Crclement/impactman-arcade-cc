@@ -1031,3 +1031,4 @@ server.listen(PORT, () => {
   console.log(`Consoles: http://localhost:${PORT}/api/consoles`);
   console.log(`Leaderboard: http://localhost:${PORT}/api/leaderboard`);
 });
+
