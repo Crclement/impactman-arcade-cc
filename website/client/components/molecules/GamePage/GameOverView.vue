@@ -25,7 +25,25 @@
               </button>
             </div>
 
-            <!-- QR Code display -->
+            <!-- Logged-in user: score auto-saved -->
+            <div v-else-if="gameStore.loggedInUser && scoreSaved" class="text-center w-full">
+              <h3 class="text-xl font-bold text-[#16114F] mb-2">Score Saved!</h3>
+              <p class="text-gray-600 text-sm mb-4">Nice game, {{ gameStore.loggedInUser.name }}!</p>
+
+              <div class="bg-[#D9FF69] rounded-xl p-4 mb-4">
+                <p class="text-[#16114F] font-bold text-lg">{{ gameStore.global.currentScore.toLocaleString() }} pts</p>
+                <p class="text-[#16114F]/70 text-sm">Level {{ gameStore.global.currentLevel }} &bull; {{ gameStore.global.currentBags }} bags</p>
+              </div>
+
+              <button
+                @click="navigateTo(`/dashboard/${gameStore.loggedInUser.id}`)"
+                class="text-[#16114F] underline text-sm font-bold"
+              >
+                View Dashboard
+              </button>
+            </div>
+
+            <!-- Guest: QR Code display -->
             <div v-else-if="sessionCode" class="text-center w-full">
               <h3 class="text-xl font-bold text-[#16114F] mb-2">Save Your Score!</h3>
               <p class="text-gray-600 text-sm mb-4">Scan to link this game to your account</p>
@@ -77,6 +95,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const sessionCode = ref<string | null>(null)
 const qrCodeUrl = ref<string>('')
+const scoreSaved = ref(false)
 
 // Console identification (can be set via env or passed from Pi)
 const consoleId = ref(process.client ? (localStorage.getItem('consoleId') || 'IMP-001') : 'IMP-001')
@@ -97,9 +116,13 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
-// Create session on mount
+// Save or create session on mount
 onMounted(() => {
-  createSession()
+  if (gameStore.loggedInUser) {
+    saveScoreForUser()
+  } else {
+    createSession()
+  }
 
   // Add keyboard listener for arcade controls
   if (process.client) {
@@ -113,6 +136,42 @@ onUnmounted(() => {
     window.removeEventListener('keydown', handleKeydown)
   }
 })
+
+async function saveScoreForUser() {
+  loading.value = true
+  error.value = null
+
+  try {
+    const apiBase = config.public.apiBase || 'http://localhost:3001'
+    const userId = gameStore.loggedInUser!.id
+
+    const res = await $fetch<any>(`${apiBase}/api/users/${userId}/scores`, {
+      method: 'POST',
+      body: {
+        consoleId: consoleId.value,
+        raspiId: raspiId.value,
+        score: gameStore.global.currentScore,
+        level: gameStore.global.currentLevel,
+        bags: gameStore.global.currentBags,
+        plasticRemoved: gameStore.global.currentBags * 0.1,
+      },
+    })
+
+    scoreSaved.value = true
+
+    // Update local user data
+    if (res.user) {
+      gameStore.loggedInUser = res.user
+      localStorage.setItem('impactarcade_user', JSON.stringify(res.user))
+    }
+  } catch (e: any) {
+    console.error('Failed to save score:', e)
+    // Fallback to session flow
+    createSession()
+  } finally {
+    loading.value = false
+  }
+}
 
 async function createSession() {
   loading.value = true

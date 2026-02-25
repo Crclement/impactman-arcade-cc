@@ -25,6 +25,11 @@
     <div v-if="store.global.gameScreen === 'menu'"
       class="absolute left-1/2 -translate-x-1/2 bottom-8 flex flex-col items-center">
 
+      <!-- Logged-in user greeting -->
+      <div v-if="store.loggedInUser" class="bg-white/95 rounded-lg px-4 py-2 mb-3 shadow-lg text-center">
+        <p class="text-[#16114F] font-bold text-sm">Welcome, {{ store.loggedInUser.name }}!</p>
+      </div>
+
       <!-- Play button and QR code inline -->
       <div class="flex items-center gap-4">
         <button
@@ -33,8 +38,8 @@
           <span class="text-play">Play</span>
         </button>
 
-        <!-- QR Code Box -->
-        <div class="bg-white/95 rounded-lg p-2 shadow-lg">
+        <!-- QR Code Box (only show if not logged in) -->
+        <div v-if="!store.loggedInUser" class="bg-white/95 rounded-lg p-2 shadow-lg">
           <img :src="loginQrUrl" alt="Login QR" class="w-16 h-16 rounded" />
         </div>
       </div>
@@ -55,9 +60,6 @@ const store = useGameStore()
 // Console identification
 const consoleId = ref(process.client ? (localStorage.getItem('consoleId') || 'IMP-001') : 'IMP-001')
 const raspiId = ref(process.client ? (localStorage.getItem('raspiId') || 'RPI-001') : 'RPI-001')
-
-// Logged in user state
-const loggedInUser = ref<any>(null)
 
 // Login QR URL - links to login page with console info
 const loginQrUrl = computed(() => {
@@ -90,17 +92,10 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
-// Check for logged in user on mount
+// Load user and setup on mount
 onMounted(() => {
   if (process.client) {
-    const savedUser = localStorage.getItem('impactarcade_user')
-    if (savedUser) {
-      try {
-        loggedInUser.value = JSON.parse(savedUser)
-      } catch (e) {
-        console.error('Failed to parse saved user:', e)
-      }
-    }
+    store.loadUser()
 
     // Add keyboard listener for arcade controls
     window.addEventListener('keydown', handleKeydown)

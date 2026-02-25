@@ -613,6 +613,65 @@ app.get('/api/users/:id/scores', (req, res) => {
   });
 });
 
+// Save score directly for logged-in users (no session/claim needed)
+app.post('/api/users/:id/scores', (req, res) => {
+  const user = users.get(req.params.id);
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const { consoleId, raspiId, score, level, bags, plasticRemoved } = req.body;
+
+  const scoreEntry = {
+    sessionCode: null,
+    consoleId: consoleId || 'IMP-001',
+    eventId: req.body.eventId || null,
+    eventDate: req.body.eventDate || null,
+    score: score || 0,
+    level: level || 1,
+    bags: bags || 0,
+    plasticRemoved: plasticRemoved || 0,
+    playedAt: new Date().toISOString(),
+    claimedAt: new Date().toISOString(),
+  };
+
+  const scores = userScores.get(user.id) || [];
+  scores.push(scoreEntry);
+  userScores.set(user.id, scores);
+
+  // Update user totals
+  user.totalScore += scoreEntry.score;
+  user.totalBags += scoreEntry.bags;
+  user.gamesPlayed += 1;
+  users.set(user.id, user);
+
+  // Update global leaderboard if this is a new high score for the user
+  const userHighScore = Math.max(...scores.map(s => s.score));
+  const existingEntry = globalLeaderboard.find(e => e.consoleId === (consoleId || 'IMP-001'));
+  if (existingEntry && scoreEntry.score > existingEntry.score) {
+    existingEntry.score = scoreEntry.score;
+    existingEntry.date = scoreEntry.playedAt;
+    globalLeaderboard.sort((a, b) => b.score - a.score);
+  } else if (!existingEntry && scoreEntry.score > 0) {
+    globalLeaderboard.push({
+      consoleId: consoleId || 'IMP-001',
+      consoleName: consoleId || 'IMP-001',
+      score: scoreEntry.score,
+      date: scoreEntry.playedAt,
+    });
+    globalLeaderboard.sort((a, b) => b.score - a.score);
+  }
+
+  console.log(`[${new Date().toISOString()}] Score saved for ${user.email}: ${scoreEntry.score} (Level ${scoreEntry.level})`);
+
+  res.json({
+    success: true,
+    user,
+    scoreEntry,
+  });
+});
+
 // ============================================
 // PAYMENT ENDPOINTS (Apple Pay via Square)
 // ============================================

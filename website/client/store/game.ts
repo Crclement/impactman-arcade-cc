@@ -1,12 +1,22 @@
 import { defineStore } from 'pinia'
 import { User } from './auth'
 
+export interface LoggedInUser {
+  id: string,
+  name: string,
+  email: string,
+  totalScore?: number,
+  totalBags?: number,
+  gamesPlayed?: number,
+}
+
 export interface GameStore {
   sound: boolean,
   global: GameGlobalValues,
   leaderboard: GameScore[],
   allies: string[],
-  unityInstance?: any
+  unityInstance?: any,
+  loggedInUser: LoggedInUser | null,
 }
 
 export interface GameScore {
@@ -38,9 +48,29 @@ export const useGameStore = defineStore('game', {
     },
     leaderboard: [],
     unityInstance: null,
-    allies: []
+    allies: [],
+    loggedInUser: null,
   }),
   actions: {
+    loadUser() {
+      if (process.client) {
+        const saved = localStorage.getItem('impactarcade_user')
+        if (saved) {
+          try {
+            this.loggedInUser = JSON.parse(saved)
+          } catch (e) {
+            console.error('Failed to parse saved user:', e)
+          }
+        }
+      }
+    },
+    clearUser() {
+      this.loggedInUser = null
+      if (process.client) {
+        localStorage.removeItem('impactarcade_user')
+        localStorage.removeItem('impactarcade_token')
+      }
+    },
     SendMessage(message: string){
       console.log('Sending message', message, this.unityInstance)
       this.unityInstance.SendMessage("GameManager", "OnWebMessage", message)
