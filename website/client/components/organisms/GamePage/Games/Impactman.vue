@@ -50,6 +50,10 @@
         WARNING: THIS GAME REMOVES REAL-WORLD OCEAN PLASTIC!
       </div>
     </div>
+    <!-- Offline indicator -->
+    <div v-if="!isOnline" class="absolute top-3 right-3 bg-red-500/90 text-white text-xs font-bold px-3 py-1 rounded-full">
+      OFFLINE
+    </div>
     <MoleculesGamePageEggScreen />
   </AtomsBox>
 </template>
@@ -60,10 +64,20 @@ import { useConsoleSocket } from '~~/composables/useConsoleSocket';
 
 const store = useGameStore()
 const { connect, send, on, disconnect } = useConsoleSocket()
+const isOnline = ref(true)
 
-// Console identification
-const consoleId = ref(process.client ? (localStorage.getItem('consoleId') || 'IMP-001') : 'IMP-001')
-const raspiId = ref(process.client ? (localStorage.getItem('raspiId') || 'RPI-001') : 'RPI-001')
+const config = useRuntimeConfig()
+const route = useRoute()
+
+// Console identification — prefer URL param, then localStorage, then default
+const consoleId = ref(process.client
+  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'IMP-001')
+  : 'IMP-001')
+const raspiId = ref(process.client
+  ? ((route.query.raspi as string) || localStorage.getItem('raspiId') || 'RPI-001')
+  : 'RPI-001')
+
+const apiBase = config.public.apiBase || 'http://localhost:3001'
 
 // Login QR URL - links to login page with console info
 const loginQrUrl = computed(() => {
@@ -100,6 +114,10 @@ onMounted(() => {
   if (process.client) {
     store.loadUser()
 
+    // Persist console ID to localStorage for other pages
+    localStorage.setItem('consoleId', consoleId.value)
+    localStorage.setItem('raspiId', raspiId.value)
+
     // Connect to WebSocket as this console
     connect(consoleId.value)
 
@@ -113,9 +131,34 @@ onMounted(() => {
       }
     }, 500)
 
+    // Track online/offline status
+    isOnline.value = navigator.onLine
+    const onOnline = () => { isOnline.value = true }
+    const onOffline = () => { isOnline.value = false }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+
+    // Poll for logged-in user as fallback (in case WebSocket doesn't connect)
+    const loginPollInterval = setInterval(async () => {
+      // Only poll when no user is logged in and on the menu screen
+      if (!store.loggedInUser && store.global.gameScreen === 'menu') {
+        try {
+          const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`)
+          if (res.user) {
+            store.loggedInUser = res.user
+          }
+        } catch (e) {
+          // Silently fail — WebSocket is the primary mechanism
+        }
+      }
+    }, 3000)
+
     onUnmounted(() => {
       window.removeEventListener('keydown', handleKeydown)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
       clearInterval(focusInterval)
+      clearInterval(loginPollInterval)
       disconnect()
     })
   }

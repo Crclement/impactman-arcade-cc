@@ -26,10 +26,16 @@ export const $apiCall = async <T>(
     // console.log("camel", options.body);
   }
 
-  // options.headers = {
-  //   ...options.headers,
-  //   Authorization: useDonorStore().token,
-  // };
+  // Inject auth token if available
+  if (process.client) {
+    const token = localStorage.getItem('impactarcade_token');
+    if (token) {
+      options.headers = {
+        ...options.headers,
+        Authorization: `Bearer ${token}`,
+      };
+    }
+  }
 
   const res = await $fetch<T>(path, {
     baseURL: useRuntimeConfig().public.apiBase,

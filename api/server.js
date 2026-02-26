@@ -6,6 +6,8 @@ const http = require('http');
 const WebSocket = require('ws');
 const { sendWelcomeEmail, sendScoreClaimedEmail } = require('./email');
 const { createPayment, getSquareConfig, PLAY_PRICE_CENTS } = require('./payments');
+const db = require('./db');
+const { generateToken, authMiddleware, adminMiddleware } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,8 +16,14 @@ const PORT = process.env.PORT || 3001;
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Track connected consoles (consoleId -> WebSocket)
+// Track connected consoles (consoleId -> WebSocket) — kept in-memory (can't serialize WS)
 const connectedConsoles = new Map();
+
+// Console login sessions (consoleId -> { user, loggedInAt }) — ephemeral per-session
+const consoleLogins = new Map();
+
+// Pending game starts (consoleId -> { userId, expiresAt }) — ephemeral, expires in 5 min
+const pendingGameStarts = new Map();
 
 app.use(cors());
 app.use(express.json());
@@ -24,37 +32,6 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'website', 'client', 'public'), {
   extensions: ['html']
 }));
-
-// ============================================
-// DATA STORES
-// ============================================
-
-// Console system status (from Pi monitoring agent)
-const consoleStatuses = new Map();
-
-// Game statistics per console
-const gameStats = new Map();
-
-// Global leaderboard (top scores across all consoles)
-const globalLeaderboard = [];
-
-// Game sessions (for QR code flow)
-const gameSessions = new Map();
-
-// Users
-const users = new Map();
-
-// User scores (userId -> array of scores)
-const userScores = new Map();
-
-// User play credits (userId -> { freePlayUsed, credits, payments[] })
-const userCredits = new Map();
-
-// Console login sessions (consoleId -> { user, loggedInAt })
-const consoleLogins = new Map();
-
-// Pending game starts (consoleId -> { userId, expiresAt })
-const pendingGameStarts = new Map();
 
 // ============================================
 // WEBSOCKET HANDLING
@@ -90,38 +67,37 @@ wss.on('connection', (ws, req) => {
       if (data.type === 'gameEnded') {
         const { userId, score, level, bags } = data;
         if (userId) {
-          // Auto-save score for logged-in player
-          const user = users.get(userId);
-          if (user) {
-            const scoreEntry = {
-              consoleId,
-              score: score || 0,
-              level: level || 1,
-              bags: bags || 0,
-              plasticRemoved: (bags || 0) * 0.1,
-              playedAt: new Date().toISOString(),
-            };
+          // Auto-save score for logged-in player (async, fire-and-forget with logging)
+          (async () => {
+            try {
+              const userRow = await db.findUserById(userId);
+              if (!userRow) return;
+              const user = db.formatUser(userRow);
 
-            const scores = userScores.get(userId) || [];
-            scores.push(scoreEntry);
-            userScores.set(userId, scores);
+              await db.addScore(userId, {
+                consoleId,
+                score: score || 0,
+                level: level || 1,
+                bags: bags || 0,
+                plasticRemoved: (bags || 0) * 0.1,
+                playedAt: new Date().toISOString(),
+              });
 
-            // Update user totals
-            user.totalScore += score || 0;
-            user.totalBags += bags || 0;
-            user.gamesPlayed += 1;
-            users.set(userId, user);
+              await db.updateUserTotals(userId, score || 0, bags || 0);
 
-            console.log(`[WS] Score saved for ${user.email}: ${score} pts`);
+              console.log(`[WS] Score saved for ${user.email}: ${score} pts`);
 
-            // Send score saved confirmation to console
-            ws.send(JSON.stringify({
-              type: 'scoreSaved',
-              userId,
-              score,
-              userName: user.name,
-            }));
-          }
+              // Send score saved confirmation to console
+              ws.send(JSON.stringify({
+                type: 'scoreSaved',
+                userId,
+                score,
+                userName: user.name,
+              }));
+            } catch (e) {
+              console.error('[WS] Error saving score:', e);
+            }
+          })();
         }
       }
     } catch (e) {
@@ -168,86 +144,14 @@ function generateUserId() {
   return 'usr_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 }
 
-function generateToken() {
-  return Math.random().toString(36).substr(2) + Math.random().toString(36).substr(2);
-}
-
-// ============================================
-// TEST DATA INITIALIZATION
-// ============================================
-
-const testConsoles = [
-  { consoleId: 'IMP-001', name: '001' },
-  { consoleId: 'IMP-002', name: '002' },
-  { consoleId: 'IMP-003', name: '003' },
-  { consoleId: 'IMP-004', name: '004' },
-  { consoleId: 'IMP-005', name: '005' },
-  { consoleId: 'IMP-006', name: '006' },
-  { consoleId: 'IMP-007', name: '007' },
-  { consoleId: 'IMP-008', name: '008' },
-  { consoleId: 'IMP-009', name: '009' },
-  { consoleId: 'IMP-010', name: '010' },
-];
-
-// Initialize test data
-testConsoles.forEach((console, index) => {
-  const isOffline = index === 4;
-  const isWarning = index === 6;
-  const isPlaying = index === 1 || index === 5 || index === 8;
-
-  // System status
-  consoleStatuses.set(console.consoleId, {
-    consoleId: console.consoleId,
-    name: console.name,
-    temperature: isOffline ? 0 : 38 + Math.floor(Math.random() * 15),
-    cpuUsage: isOffline ? 0 : (isPlaying ? 35 + Math.floor(Math.random() * 20) : 8 + Math.floor(Math.random() * 15)),
-    memoryUsage: isOffline ? 0 : 25 + Math.floor(Math.random() * 20),
-    diskUsage: isOffline ? 0 : 15 + Math.floor(Math.random() * 10),
-    uptime: isOffline ? '-' : `${Math.floor(Math.random() * 30)}d ${Math.floor(Math.random() * 24)}h`,
-    version: isOffline ? '1.2.1' : '1.2.3',
-    status: isOffline ? 'offline' : (isWarning ? 'warning' : 'online'),
-    lastSeen: isOffline ? Date.now() - 7200000 : Date.now() - Math.floor(Math.random() * 60000),
-    gameRunning: !isOffline,
-    ip: `192.168.1.${100 + index}`,
-    hostname: `impactarcade-${console.consoleId.toLowerCase()}`,
-  });
-
-  // Game statistics
-  const gamesPlayed = Math.floor(Math.random() * 3000) + 100;
-  const highScore = Math.floor(Math.random() * 50000) + 5000;
-
-  gameStats.set(console.consoleId, {
-    consoleId: console.consoleId,
-    gamesPlayed: gamesPlayed,
-    highScore: highScore,
-    highScoreDate: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-    totalScore: gamesPlayed * Math.floor(Math.random() * 2000 + 500),
-    avgScore: Math.floor(Math.random() * 3000 + 1000),
-    // Current gameplay state
-    isPlaying: isPlaying,
-    currentLevel: isPlaying ? Math.floor(Math.random() * 8) + 1 : 0,
-    currentScore: isPlaying ? Math.floor(Math.random() * 15000) : 0,
-    currentSessionStart: isPlaying ? Date.now() - Math.floor(Math.random() * 300000) : null,
-  });
-
-  // Add high scores to global leaderboard
-  globalLeaderboard.push({
-    consoleId: console.consoleId,
-    consoleName: console.name,
-    score: highScore,
-    date: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-  });
-});
-
-// Sort global leaderboard
-globalLeaderboard.sort((a, b) => b.score - a.score);
+// generateToken is now imported from ./auth (JWT-based)
 
 // ============================================
 // CONSOLE STATUS ENDPOINTS (from Pi)
 // ============================================
 
 // Receive status updates from Pi consoles
-app.post('/api/status', (req, res) => {
+app.post('/api/status', async (req, res) => {
   const status = req.body;
 
   if (!status.consoleId) {
@@ -259,15 +163,18 @@ app.post('/api/status', (req, res) => {
     statusLevel = 'warning';
   }
 
-  consoleStatuses.set(status.consoleId, {
-    ...consoleStatuses.get(status.consoleId),
-    ...status,
-    status: statusLevel,
-    lastSeen: Date.now(),
-  });
+  try {
+    await db.upsertConsoleStatus({
+      ...status,
+      status: statusLevel,
+    });
 
-  console.log(`[${new Date().toISOString()}] Status: ${status.consoleId} - CPU ${status.cpuUsage}%, Temp ${status.temperature}°C`);
-  res.json({ success: true });
+    console.log(`[${new Date().toISOString()}] Status: ${status.consoleId} - CPU ${status.cpuUsage}%, Temp ${status.temperature}°C`);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[API] Error upserting console status:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // ============================================
@@ -275,104 +182,111 @@ app.post('/api/status', (req, res) => {
 // ============================================
 
 // Game started
-app.post('/api/game/start', (req, res) => {
+app.post('/api/game/start', async (req, res) => {
   const { consoleId } = req.body;
 
   if (!consoleId) {
     return res.status(400).json({ error: 'consoleId required' });
   }
 
-  const stats = gameStats.get(consoleId) || {
-    consoleId,
-    gamesPlayed: 0,
-    highScore: 0,
-    highScoreDate: null,
-    totalScore: 0,
-    avgScore: 0,
-  };
+  try {
+    let stats = await db.getGameStats(consoleId);
 
-  stats.gamesPlayed += 1;
-  stats.isPlaying = true;
-  stats.currentLevel = 1;
-  stats.currentScore = 0;
-  stats.currentSessionStart = Date.now();
+    if (!stats) {
+      stats = {
+        consoleId,
+        gamesPlayed: 0,
+        highScore: 0,
+        highScoreDate: null,
+        totalScore: 0,
+        avgScore: 0,
+        isPlaying: false,
+        currentLevel: 0,
+        currentScore: 0,
+        currentSessionStart: null,
+      };
+    }
 
-  gameStats.set(consoleId, stats);
+    stats.gamesPlayed += 1;
+    stats.isPlaying = true;
+    stats.currentLevel = 1;
+    stats.currentScore = 0;
+    stats.currentSessionStart = Date.now();
 
-  console.log(`[${new Date().toISOString()}] Game START: ${consoleId} (Total games: ${stats.gamesPlayed})`);
-  res.json({ success: true, gameNumber: stats.gamesPlayed });
+    await db.upsertGameStats(consoleId, stats);
+
+    console.log(`[${new Date().toISOString()}] Game START: ${consoleId} (Total games: ${stats.gamesPlayed})`);
+    res.json({ success: true, gameNumber: stats.gamesPlayed });
+  } catch (e) {
+    console.error('[API] Error starting game:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Game progress update (level/score change)
-app.post('/api/game/update', (req, res) => {
+app.post('/api/game/update', async (req, res) => {
   const { consoleId, level, score } = req.body;
 
   if (!consoleId) {
     return res.status(400).json({ error: 'consoleId required' });
   }
 
-  const stats = gameStats.get(consoleId);
-  if (!stats) {
-    return res.status(404).json({ error: 'Console not found' });
+  try {
+    const stats = await db.getGameStats(consoleId);
+    if (!stats) {
+      return res.status(404).json({ error: 'Console not found' });
+    }
+
+    stats.isPlaying = true;
+    stats.currentLevel = level || stats.currentLevel;
+    stats.currentScore = score || stats.currentScore;
+
+    await db.upsertGameStats(consoleId, stats);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[API] Error updating game:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  stats.isPlaying = true;
-  stats.currentLevel = level || stats.currentLevel;
-  stats.currentScore = score || stats.currentScore;
-
-  gameStats.set(consoleId, stats);
-  res.json({ success: true });
 });
 
 // Game ended
-app.post('/api/game/end', (req, res) => {
+app.post('/api/game/end', async (req, res) => {
   const { consoleId, finalScore, level } = req.body;
 
   if (!consoleId) {
     return res.status(400).json({ error: 'consoleId required' });
   }
 
-  const stats = gameStats.get(consoleId);
-  if (!stats) {
-    return res.status(404).json({ error: 'Console not found' });
-  }
-
-  // Update stats
-  stats.isPlaying = false;
-  stats.currentLevel = 0;
-  stats.currentScore = 0;
-  stats.currentSessionStart = null;
-  stats.totalScore += finalScore || 0;
-  stats.avgScore = Math.floor(stats.totalScore / stats.gamesPlayed);
-
-  // Check for new high score
-  let isNewHighScore = false;
-  if (finalScore > stats.highScore) {
-    stats.highScore = finalScore;
-    stats.highScoreDate = new Date().toISOString();
-    isNewHighScore = true;
-
-    // Update global leaderboard
-    const leaderboardEntry = globalLeaderboard.find(e => e.consoleId === consoleId);
-    if (leaderboardEntry) {
-      leaderboardEntry.score = finalScore;
-      leaderboardEntry.date = stats.highScoreDate;
-    } else {
-      const consoleName = consoleStatuses.get(consoleId)?.name || consoleId;
-      globalLeaderboard.push({
-        consoleId,
-        consoleName,
-        score: finalScore,
-        date: stats.highScoreDate,
-      });
+  try {
+    const stats = await db.getGameStats(consoleId);
+    if (!stats) {
+      return res.status(404).json({ error: 'Console not found' });
     }
-    globalLeaderboard.sort((a, b) => b.score - a.score);
+
+    // Update stats
+    stats.isPlaying = false;
+    stats.currentLevel = 0;
+    stats.currentScore = 0;
+    stats.currentSessionStart = null;
+    stats.totalScore += finalScore || 0;
+    stats.avgScore = stats.gamesPlayed > 0 ? Math.floor(stats.totalScore / stats.gamesPlayed) : 0;
+
+    // Check for new high score
+    let isNewHighScore = false;
+    if (finalScore > stats.highScore) {
+      stats.highScore = finalScore;
+      stats.highScoreDate = new Date().toISOString();
+      isNewHighScore = true;
+    }
+
+    await db.upsertGameStats(consoleId, stats);
+
+    console.log(`[${new Date().toISOString()}] Game END: ${consoleId} - Score: ${finalScore}, Level: ${level}${isNewHighScore ? ' NEW HIGH SCORE!' : ''}`);
+    res.json({ success: true, isNewHighScore, highScore: stats.highScore });
+  } catch (e) {
+    console.error('[API] Error ending game:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  gameStats.set(consoleId, stats);
-
-  console.log(`[${new Date().toISOString()}] Game END: ${consoleId} - Score: ${finalScore}, Level: ${level}${isNewHighScore ? ' NEW HIGH SCORE!' : ''}`);
-  res.json({ success: true, isNewHighScore, highScore: stats.highScore });
 });
 
 // ============================================
@@ -380,65 +294,70 @@ app.post('/api/game/end', (req, res) => {
 // ============================================
 
 // Create a new game session (called at game over)
-app.post('/api/sessions', (req, res) => {
+app.post('/api/sessions', async (req, res) => {
   const { consoleId, raspiId, score, level, bags, plasticRemoved } = req.body;
 
   if (!consoleId) {
     return res.status(400).json({ error: 'consoleId required' });
   }
 
-  // Generate unique session code
-  let code;
-  do {
-    code = generateSessionCode();
-  } while (gameSessions.has(code));
+  try {
+    // Generate unique session code
+    let code;
+    let exists = true;
+    while (exists) {
+      code = generateSessionCode();
+      exists = await db.sessionCodeExists(code);
+    }
 
-  const session = {
-    code,
-    consoleId,
-    raspiId: raspiId || null,
-    eventId: req.body.eventId || null, // Event identifier (set via Fleet Manager)
-    eventDate: req.body.eventDate || null, // Event date
-    score: score || 0,
-    level: level || 1,
-    bags: bags || 0,
-    plasticRemoved: plasticRemoved || 0,
-    claimed: false,
-    userId: null,
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
-  };
+    const session = await db.createSession(code, {
+      consoleId,
+      raspiId: raspiId || null,
+      eventId: req.body.eventId || null,
+      eventDate: req.body.eventDate || null,
+      score: score || 0,
+      level: level || 1,
+      bags: bags || 0,
+      plasticRemoved: plasticRemoved || 0,
+    });
 
-  gameSessions.set(code, session);
+    console.log(`[${new Date().toISOString()}] Session created: ${code} | Console: ${consoleId} | Raspi: ${raspiId || 'N/A'} | Score: ${score}`);
 
-  console.log(`[${new Date().toISOString()}] Session created: ${code} | Console: ${consoleId} | Raspi: ${raspiId || 'N/A'} | Score: ${score}`);
-
-  res.json({
-    success: true,
-    code,
-    claimUrl: `/claim/${code}`,
-    session,
-  });
+    res.json({
+      success: true,
+      code,
+      claimUrl: `/claim/${code}`,
+      session,
+    });
+  } catch (e) {
+    console.error('[API] Error creating session:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Get session info
-app.get('/api/sessions/:code', (req, res) => {
-  const session = gameSessions.get(req.params.code.toUpperCase());
+app.get('/api/sessions/:code', async (req, res) => {
+  try {
+    const session = await db.getSession(req.params.code);
 
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' });
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Check if expired
+    if (new Date(session.expiresAt) < new Date()) {
+      return res.status(410).json({ error: 'Session expired' });
+    }
+
+    res.json(session);
+  } catch (e) {
+    console.error('[API] Error getting session:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  // Check if expired
-  if (new Date(session.expiresAt) < new Date()) {
-    return res.status(410).json({ error: 'Session expired' });
-  }
-
-  res.json(session);
 });
 
 // Claim a session (link to user account)
-app.post('/api/sessions/:code/claim', (req, res) => {
+app.post('/api/sessions/:code/claim', async (req, res) => {
   const { email, name } = req.body;
   const code = req.params.code.toUpperCase();
 
@@ -446,83 +365,80 @@ app.post('/api/sessions/:code/claim', (req, res) => {
     return res.status(400).json({ error: 'email required' });
   }
 
-  const session = gameSessions.get(code);
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' });
+  try {
+    const session = await db.getSession(code);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (session.claimed) {
+      return res.status(400).json({ error: 'Session already claimed' });
+    }
+
+    if (new Date(session.expiresAt) < new Date()) {
+      return res.status(410).json({ error: 'Session expired' });
+    }
+
+    // Find or create user
+    let userRow = await db.findUserByEmail(email);
+    let isNewUser = false;
+
+    if (!userRow) {
+      const userId = generateUserId();
+      userRow = await db.createUser(userId, email, name || email.split('@')[0]);
+      isNewUser = true;
+      console.log(`[${new Date().toISOString()}] New user: ${email} (${userId})`);
+    }
+    const user = db.formatUser(userRow);
+
+    // Claim the session
+    await db.claimSession(code, user.id);
+
+    // Add score to user's history
+    await db.addScore(user.id, {
+      sessionCode: code,
+      consoleId: session.consoleId,
+      eventId: session.eventId,
+      eventDate: session.eventDate,
+      score: session.score,
+      level: session.level,
+      bags: session.bags,
+      plasticRemoved: session.plasticRemoved,
+      playedAt: session.createdAt,
+      claimedAt: new Date().toISOString(),
+    });
+
+    // Update user totals
+    const updatedRow = await db.updateUserTotals(user.id, session.score, session.bags);
+    const updatedUser = db.formatUser(updatedRow);
+
+    // Generate auth token
+    const token = generateToken(user.id);
+
+    // Send score claimed email
+    sendScoreClaimedEmail(updatedUser, session).catch(err => {
+      console.error('[API] Failed to send score claimed email:', err);
+    });
+
+    // Send welcome email for new users
+    if (isNewUser) {
+      sendWelcomeEmail(updatedUser).catch(err => {
+        console.error('[API] Failed to send welcome email:', err);
+      });
+    }
+
+    console.log(`[${new Date().toISOString()}] Session claimed: ${code} by ${updatedUser.email}`);
+
+    res.json({
+      success: true,
+      user: updatedUser,
+      token,
+      session: { ...session, claimed: true, userId: user.id, claimedAt: new Date().toISOString() },
+    });
+  } catch (e) {
+    console.error('[API] Error claiming session:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  if (session.claimed) {
-    return res.status(400).json({ error: 'Session already claimed' });
-  }
-
-  if (new Date(session.expiresAt) < new Date()) {
-    return res.status(410).json({ error: 'Session expired' });
-  }
-
-  // Find or create user
-  let user = Array.from(users.values()).find(u => u.email === email.toLowerCase());
-
-  if (!user) {
-    const userId = generateUserId();
-    user = {
-      id: userId,
-      email: email.toLowerCase(),
-      name: name || email.split('@')[0],
-      createdAt: new Date().toISOString(),
-      totalScore: 0,
-      totalBags: 0,
-      gamesPlayed: 0,
-    };
-    users.set(userId, user);
-    userScores.set(userId, []);
-    console.log(`[${new Date().toISOString()}] New user: ${user.email} (${userId})`);
-  }
-
-  // Claim the session
-  session.claimed = true;
-  session.userId = user.id;
-  session.claimedAt = new Date().toISOString();
-
-  // Add score to user's history
-  const scoreEntry = {
-    sessionCode: code,
-    consoleId: session.consoleId,
-    eventId: session.eventId, // For tracking per-event scores
-    eventDate: session.eventDate,
-    score: session.score,
-    level: session.level,
-    bags: session.bags,
-    plasticRemoved: session.plasticRemoved,
-    playedAt: session.createdAt,
-    claimedAt: session.claimedAt,
-  };
-
-  const scores = userScores.get(user.id) || [];
-  scores.push(scoreEntry);
-  userScores.set(user.id, scores);
-
-  // Update user totals
-  user.totalScore += session.score;
-  user.totalBags += session.bags;
-  user.gamesPlayed += 1;
-  users.set(user.id, user);
-
-  // Generate auth token
-  const token = generateToken();
-
-  // Send score claimed email
-  sendScoreClaimedEmail(user, session).catch(err => {
-    console.error('[API] Failed to send score claimed email:', err);
-  });
-
-  console.log(`[${new Date().toISOString()}] Session claimed: ${code} by ${user.email}`);
-
-  res.json({
-    success: true,
-    user,
-    token,
-    session,
-  });
 });
 
 // ============================================
@@ -530,149 +446,157 @@ app.post('/api/sessions/:code/claim', (req, res) => {
 // ============================================
 
 // Login/signup with email
-app.post('/api/users/login', (req, res) => {
+app.post('/api/users/login', async (req, res) => {
   const { email, name } = req.body;
 
   if (!email) {
     return res.status(400).json({ error: 'email required' });
   }
 
-  // Find or create user
-  let user = Array.from(users.values()).find(u => u.email === email.toLowerCase());
-  let isNewUser = false;
+  try {
+    let userRow = await db.findUserByEmail(email);
+    let isNewUser = false;
 
-  if (!user) {
-    const userId = generateUserId();
-    user = {
-      id: userId,
-      email: email.toLowerCase(),
-      name: name || email.split('@')[0],
-      createdAt: new Date().toISOString(),
-      totalScore: 0,
-      totalBags: 0,
-      gamesPlayed: 0,
-    };
-    users.set(userId, user);
-    userScores.set(userId, []);
-    isNewUser = true;
-    console.log(`[${new Date().toISOString()}] New user signup: ${user.email}`);
-  }
+    if (!userRow) {
+      const userId = generateUserId();
+      userRow = await db.createUser(userId, email, name || email.split('@')[0]);
+      isNewUser = true;
+      console.log(`[${new Date().toISOString()}] New user signup: ${email}`);
+    }
 
-  const token = generateToken();
+    const user = db.formatUser(userRow);
+    const token = generateToken(user.id);
 
-  // Send welcome email for new users
-  if (isNewUser) {
-    sendWelcomeEmail(user).catch(err => {
-      console.error('[API] Failed to send welcome email:', err);
+    // Send welcome email for new users
+    if (isNewUser) {
+      sendWelcomeEmail(user).catch(err => {
+        console.error('[API] Failed to send welcome email:', err);
+      });
+    }
+
+    res.json({
+      success: true,
+      user,
+      token,
+      isNewUser,
     });
+  } catch (e) {
+    console.error('[API] Error during login:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  res.json({
-    success: true,
-    user,
-    token,
-    isNewUser,
-  });
 });
 
 // Get user by ID
-app.get('/api/users/:id', (req, res) => {
-  const user = users.get(req.params.id);
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const userRow = await db.findUserById(req.params.id);
 
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = db.formatUser(userRow);
+    const scores = await db.getUserScores(user.id);
+    const highScore = scores.length > 0 ? Math.max(...scores.map(s => s.score)) : 0;
+
+    res.json({
+      ...user,
+      highScore,
+      scores: scores.slice(0, 10), // Already ordered DESC
+    });
+  } catch (e) {
+    console.error('[API] Error getting user:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  const scores = userScores.get(user.id) || [];
-  const highScore = scores.length > 0 ? Math.max(...scores.map(s => s.score)) : 0;
-
-  res.json({
-    ...user,
-    highScore,
-    scores: scores.slice(-10).reverse(), // Last 10 games
-  });
 });
 
 // Get user's score history
-app.get('/api/users/:id/scores', (req, res) => {
-  const user = users.get(req.params.id);
+app.get('/api/users/:id/scores', async (req, res) => {
+  try {
+    const userRow = await db.findUserById(req.params.id);
 
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = db.formatUser(userRow);
+    const scores = await db.getUserScores(user.id);
+
+    res.json({
+      user,
+      scores,
+      stats: {
+        totalGames: scores.length,
+        totalScore: user.totalScore,
+        totalBags: user.totalBags,
+        highScore: scores.length > 0 ? Math.max(...scores.map(s => s.score)) : 0,
+        avgScore: scores.length > 0 ? Math.floor(user.totalScore / scores.length) : 0,
+      },
+    });
+  } catch (e) {
+    console.error('[API] Error getting user scores:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  const scores = userScores.get(user.id) || [];
-
-  res.json({
-    user,
-    scores: scores.reverse(),
-    stats: {
-      totalGames: scores.length,
-      totalScore: user.totalScore,
-      totalBags: user.totalBags,
-      highScore: scores.length > 0 ? Math.max(...scores.map(s => s.score)) : 0,
-      avgScore: scores.length > 0 ? Math.floor(user.totalScore / scores.length) : 0,
-    },
-  });
 });
 
 // Save score directly for logged-in users (no session/claim needed)
-app.post('/api/users/:id/scores', (req, res) => {
-  const user = users.get(req.params.id);
-
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+app.post('/api/users/:id/scores', authMiddleware, async (req, res) => {
+  // Verify the authenticated user matches the route param
+  if (req.userId !== req.params.id) {
+    return res.status(403).json({ error: 'Not authorized to save scores for this user' });
   }
 
-  const { consoleId, raspiId, score, level, bags, plasticRemoved } = req.body;
+  try {
+    const userRow = await db.findUserById(req.params.id);
 
-  const scoreEntry = {
-    sessionCode: null,
-    consoleId: consoleId || 'IMP-001',
-    eventId: req.body.eventId || null,
-    eventDate: req.body.eventDate || null,
-    score: score || 0,
-    level: level || 1,
-    bags: bags || 0,
-    plasticRemoved: plasticRemoved || 0,
-    playedAt: new Date().toISOString(),
-    claimedAt: new Date().toISOString(),
-  };
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-  const scores = userScores.get(user.id) || [];
-  scores.push(scoreEntry);
-  userScores.set(user.id, scores);
+    const { consoleId, raspiId, score, level, bags, plasticRemoved, idempotencyKey } = req.body;
 
-  // Update user totals
-  user.totalScore += scoreEntry.score;
-  user.totalBags += scoreEntry.bags;
-  user.gamesPlayed += 1;
-  users.set(user.id, user);
-
-  // Update global leaderboard if this is a new high score for the user
-  const userHighScore = Math.max(...scores.map(s => s.score));
-  const existingEntry = globalLeaderboard.find(e => e.consoleId === (consoleId || 'IMP-001'));
-  if (existingEntry && scoreEntry.score > existingEntry.score) {
-    existingEntry.score = scoreEntry.score;
-    existingEntry.date = scoreEntry.playedAt;
-    globalLeaderboard.sort((a, b) => b.score - a.score);
-  } else if (!existingEntry && scoreEntry.score > 0) {
-    globalLeaderboard.push({
+    const result = await db.addScore(userRow.id, {
       consoleId: consoleId || 'IMP-001',
-      consoleName: consoleId || 'IMP-001',
-      score: scoreEntry.score,
-      date: scoreEntry.playedAt,
+      eventId: req.body.eventId || null,
+      eventDate: req.body.eventDate || null,
+      score: score || 0,
+      level: level || 1,
+      bags: bags || 0,
+      plasticRemoved: plasticRemoved || 0,
+      playedAt: new Date().toISOString(),
+      claimedAt: new Date().toISOString(),
+      idempotencyKey: idempotencyKey || null,
     });
-    globalLeaderboard.sort((a, b) => b.score - a.score);
+
+    // If duplicate idempotency key, return success without updating totals
+    if (result.duplicate) {
+      const user = db.formatUser(userRow);
+      console.log(`[${new Date().toISOString()}] Duplicate score (idempotency: ${idempotencyKey}) for ${user.email}`);
+      return res.json({ success: true, user, duplicate: true });
+    }
+
+    // Update user totals
+    const updatedRow = await db.updateUserTotals(userRow.id, score || 0, bags || 0);
+    const user = db.formatUser(updatedRow);
+
+    console.log(`[${new Date().toISOString()}] Score saved for ${user.email}: ${score || 0} (Level ${level || 1})`);
+
+    res.json({
+      success: true,
+      user,
+      scoreEntry: {
+        consoleId: consoleId || 'IMP-001',
+        score: score || 0,
+        level: level || 1,
+        bags: bags || 0,
+        plasticRemoved: plasticRemoved || 0,
+        playedAt: new Date().toISOString(),
+      },
+    });
+  } catch (e) {
+    console.error('[API] Error saving score:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  console.log(`[${new Date().toISOString()}] Score saved for ${user.email}: ${scoreEntry.score} (Level ${scoreEntry.level})`);
-
-  res.json({
-    success: true,
-    user,
-    scoreEntry,
-  });
 });
 
 // ============================================
@@ -690,119 +614,116 @@ app.get('/api/payments/config', (req, res) => {
 });
 
 // Get user's play credits
-app.get('/api/users/:id/credits', (req, res) => {
-  const user = users.get(req.params.id);
+app.get('/api/users/:id/credits', async (req, res) => {
+  try {
+    const userRow = await db.findUserById(req.params.id);
 
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const credits = await db.getCredits(userRow.id);
+    const payments = await db.getUserPayments(userRow.id);
+
+    // If they haven't used their free play, they have 1 available
+    const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
+
+    res.json({
+      userId: userRow.id,
+      freePlayUsed: credits.freePlayUsed,
+      paidCredits: credits.credits,
+      availablePlays,
+      payments,
+    });
+  } catch (e) {
+    console.error('[API] Error getting credits:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  const credits = userCredits.get(user.id) || {
-    freePlayUsed: false,
-    credits: 0,
-    payments: [],
-  };
-
-  // If they haven't used their free play, they have 1 available
-  const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
-
-  res.json({
-    userId: user.id,
-    freePlayUsed: credits.freePlayUsed,
-    paidCredits: credits.credits,
-    availablePlays,
-    payments: credits.payments.slice(-10).reverse(),
-  });
 });
 
 // Process Apple Pay payment
-app.post('/api/payments/apple-pay', async (req, res) => {
+app.post('/api/payments/apple-pay', authMiddleware, async (req, res) => {
   const { userId, sourceId } = req.body;
 
   if (!userId || !sourceId) {
     return res.status(400).json({ error: 'userId and sourceId required' });
   }
 
-  const user = users.get(userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+  try {
+    const userRow = await db.findUserById(userId);
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const result = await createPayment(sourceId, userId, userRow.email);
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'Payment failed' });
+    }
+
+    // Add credit and payment record
+    const newCredits = await db.addCredit(userId);
+    await db.addPayment(userId, result.paymentId, PLAY_PRICE_CENTS / 100, result.receiptUrl);
+
+    const credits = await db.getCredits(userId);
+
+    console.log(`[${new Date().toISOString()}] Payment processed: ${userRow.email} now has ${newCredits} credits`);
+
+    res.json({
+      success: true,
+      paymentId: result.paymentId,
+      receiptUrl: result.receiptUrl,
+      credits: newCredits,
+      availablePlays: credits.freePlayUsed ? newCredits : newCredits + 1,
+    });
+  } catch (e) {
+    console.error('[API] Error processing payment:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  const result = await createPayment(sourceId, userId, user.email);
-
-  if (!result.success) {
-    return res.status(400).json({ error: result.error || 'Payment failed' });
-  }
-
-  // Add credit to user
-  const credits = userCredits.get(userId) || {
-    freePlayUsed: false,
-    credits: 0,
-    payments: [],
-  };
-
-  credits.credits += 1;
-  credits.payments.push({
-    paymentId: result.paymentId,
-    amount: PLAY_PRICE_CENTS / 100,
-    receiptUrl: result.receiptUrl,
-    createdAt: new Date().toISOString(),
-  });
-
-  userCredits.set(userId, credits);
-
-  console.log(`[${new Date().toISOString()}] Payment processed: ${user.email} now has ${credits.credits} credits`);
-
-  res.json({
-    success: true,
-    paymentId: result.paymentId,
-    receiptUrl: result.receiptUrl,
-    credits: credits.credits,
-    availablePlays: credits.freePlayUsed ? credits.credits : credits.credits + 1,
-  });
 });
 
 // Use a play credit (called when starting a game)
-app.post('/api/users/:id/use-credit', (req, res) => {
-  const user = users.get(req.params.id);
+app.post('/api/users/:id/use-credit', authMiddleware, async (req, res) => {
+  try {
+    const userRow = await db.findUserById(req.params.id);
 
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-  const credits = userCredits.get(user.id) || {
-    freePlayUsed: false,
-    credits: 0,
-    payments: [],
-  };
+    const credits = await db.getCredits(userRow.id);
 
-  // Check if they have any plays available
-  const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
+    // Check if they have any plays available
+    const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
 
-  if (availablePlays <= 0) {
-    return res.status(402).json({
-      error: 'No play credits available',
-      needsPayment: true,
+    if (availablePlays <= 0) {
+      return res.status(402).json({
+        error: 'No play credits available',
+        needsPayment: true,
+      });
+    }
+
+    // Use a credit
+    if (!credits.freePlayUsed) {
+      await db.useFreePlay(userRow.id);
+      console.log(`[${new Date().toISOString()}] Free play used: ${userRow.email}`);
+    } else {
+      await db.usePaidCredit(userRow.id);
+      console.log(`[${new Date().toISOString()}] Paid credit used: ${userRow.email} (${credits.credits - 1} remaining)`);
+    }
+
+    const updatedCredits = await db.getCredits(userRow.id);
+
+    res.json({
+      success: true,
+      creditsRemaining: updatedCredits.credits,
+      freePlayUsed: updatedCredits.freePlayUsed,
+      availablePlays: updatedCredits.freePlayUsed ? updatedCredits.credits : updatedCredits.credits + 1,
     });
+  } catch (e) {
+    console.error('[API] Error using credit:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  // Use a credit
-  if (!credits.freePlayUsed) {
-    credits.freePlayUsed = true;
-    console.log(`[${new Date().toISOString()}] Free play used: ${user.email}`);
-  } else {
-    credits.credits -= 1;
-    console.log(`[${new Date().toISOString()}] Paid credit used: ${user.email} (${credits.credits} remaining)`);
-  }
-
-  userCredits.set(user.id, credits);
-
-  res.json({
-    success: true,
-    creditsRemaining: credits.credits,
-    freePlayUsed: credits.freePlayUsed,
-    availablePlays: credits.freePlayUsed ? credits.credits : credits.credits + 1,
-  });
 });
 
 // ============================================
@@ -810,7 +731,7 @@ app.post('/api/users/:id/use-credit', (req, res) => {
 // ============================================
 
 // Start game on a console (called from phone after scanning QR)
-app.post('/api/consoles/:consoleId/start-game', (req, res) => {
+app.post('/api/consoles/:consoleId/start-game', async (req, res) => {
   const { consoleId } = req.params;
   const { userId } = req.body;
 
@@ -818,70 +739,72 @@ app.post('/api/consoles/:consoleId/start-game', (req, res) => {
     return res.status(400).json({ error: 'userId required' });
   }
 
-  const user = users.get(userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
+  try {
+    const userRow = await db.findUserById(userId);
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const user = db.formatUser(userRow);
 
-  // Check if console is connected
-  if (!connectedConsoles.has(consoleId)) {
-    return res.status(404).json({ error: 'Console not connected' });
-  }
+    // Check if console is connected
+    if (!connectedConsoles.has(consoleId)) {
+      return res.status(404).json({ error: 'Console not connected' });
+    }
 
-  // Check credits
-  const credits = userCredits.get(userId) || {
-    freePlayUsed: false,
-    credits: 0,
-    payments: [],
-  };
+    // Check credits
+    const credits = await db.getCredits(userId);
+    const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
 
-  const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
+    if (availablePlays <= 0) {
+      return res.status(402).json({
+        error: 'No play credits available',
+        needsPayment: true,
+      });
+    }
 
-  if (availablePlays <= 0) {
-    return res.status(402).json({
-      error: 'No play credits available',
-      needsPayment: true,
+    // Use a credit
+    if (!credits.freePlayUsed) {
+      await db.useFreePlay(userId);
+      console.log(`[${new Date().toISOString()}] Free play used: ${user.email} on ${consoleId}`);
+    } else {
+      await db.usePaidCredit(userId);
+      console.log(`[${new Date().toISOString()}] Paid credit used: ${user.email} on ${consoleId} (${credits.credits - 1} remaining)`);
+    }
+
+    const updatedCredits = await db.getCredits(userId);
+
+    // Store pending game start (in-memory)
+    pendingGameStarts.set(consoleId, {
+      userId,
+      userName: user.name,
+      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
     });
+
+    // Also set console login so arcade knows who's playing
+    consoleLogins.set(consoleId, {
+      user: { id: user.id, name: user.name, email: user.email },
+      loggedInAt: new Date().toISOString(),
+    });
+
+    // Try to send WebSocket message (optional - arcade may be polling instead)
+    sendToConsole(consoleId, {
+      type: 'readyToPlay',
+      userId,
+      userName: user.name,
+    });
+
+    console.log(`[${new Date().toISOString()}] Ready to play: ${user.email} on ${consoleId}`);
+
+    res.json({
+      success: true,
+      message: 'Console is ready! Press PLAY on the machine.',
+      creditsRemaining: updatedCredits.credits,
+      availablePlays: updatedCredits.freePlayUsed ? updatedCredits.credits : updatedCredits.credits + 1,
+    });
+  } catch (e) {
+    console.error('[API] Error starting game:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  // Use a credit
-  if (!credits.freePlayUsed) {
-    credits.freePlayUsed = true;
-    console.log(`[${new Date().toISOString()}] Free play used: ${user.email} on ${consoleId}`);
-  } else {
-    credits.credits -= 1;
-    console.log(`[${new Date().toISOString()}] Paid credit used: ${user.email} on ${consoleId} (${credits.credits} remaining)`);
-  }
-  userCredits.set(userId, credits);
-
-  // Store pending game start
-  pendingGameStarts.set(consoleId, {
-    userId,
-    userName: user.name,
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-  });
-
-  // Also set console login so arcade knows who's playing
-  consoleLogins.set(consoleId, {
-    user: { id: user.id, name: user.name, email: user.email },
-    loggedInAt: new Date().toISOString(),
-  });
-
-  // Try to send WebSocket message (optional - arcade may be polling instead)
-  sendToConsole(consoleId, {
-    type: 'readyToPlay',
-    userId,
-    userName: user.name,
-  });
-
-  console.log(`[${new Date().toISOString()}] Ready to play: ${user.email} on ${consoleId}`);
-
-  res.json({
-    success: true,
-    message: 'Console is ready! Press PLAY on the machine.',
-    creditsRemaining: credits.credits,
-    availablePlays: credits.freePlayUsed ? credits.credits : credits.credits + 1,
-  });
 });
 
 // Start game as guest (no account needed for first free play)
@@ -924,23 +847,32 @@ app.post('/api/consoles/:consoleId/start-guest', (req, res) => {
 });
 
 // Check console status (for phone to poll)
-app.get('/api/consoles/:consoleId/status', (req, res) => {
+app.get('/api/consoles/:consoleId/status', async (req, res) => {
   const { consoleId } = req.params;
 
   const isConnected = connectedConsoles.has(consoleId);
   const pending = pendingGameStarts.get(consoleId);
-  const status = consoleStatuses.get(consoleId);
 
-  res.json({
-    consoleId,
-    connected: isConnected,
-    pendingGame: pending ? { userId: pending.userId, userName: pending.userName } : null,
-    status: status?.status || 'unknown',
-  });
+  try {
+    const status = await db.getConsoleStatus(consoleId);
+    res.json({
+      consoleId,
+      connected: isConnected,
+      pendingGame: pending ? { userId: pending.userId, userName: pending.userName } : null,
+      status: status?.status || 'unknown',
+    });
+  } catch (e) {
+    res.json({
+      consoleId,
+      connected: isConnected,
+      pendingGame: pending ? { userId: pending.userId, userName: pending.userName } : null,
+      status: 'unknown',
+    });
+  }
 });
 
 // Login user to a console (called from phone after scanning QR + logging in)
-app.post('/api/consoles/:consoleId/login', (req, res) => {
+app.post('/api/consoles/:consoleId/login', async (req, res) => {
   const { consoleId } = req.params;
   const { userId } = req.body;
 
@@ -948,24 +880,30 @@ app.post('/api/consoles/:consoleId/login', (req, res) => {
     return res.status(400).json({ error: 'userId required' });
   }
 
-  const user = users.get(userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+  try {
+    const userRow = await db.findUserById(userId);
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const user = db.formatUser(userRow);
+
+    consoleLogins.set(consoleId, {
+      user: { id: user.id, name: user.name, email: user.email },
+      loggedInAt: new Date().toISOString(),
+    });
+
+    // Notify console via WebSocket
+    const wsDelivered = sendToConsole(consoleId, {
+      type: 'userLoggedIn',
+      user: { id: user.id, name: user.name, email: user.email },
+    });
+
+    console.log(`[${new Date().toISOString()}] User ${user.name} logged into console ${consoleId} (ws: ${wsDelivered})`);
+    res.json({ success: true, wsDelivered });
+  } catch (e) {
+    console.error('[API] Error logging in to console:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  consoleLogins.set(consoleId, {
-    user: { id: user.id, name: user.name, email: user.email },
-    loggedInAt: new Date().toISOString(),
-  });
-
-  // Notify console via WebSocket
-  sendToConsole(consoleId, {
-    type: 'userLoggedIn',
-    user: { id: user.id, name: user.name, email: user.email },
-  });
-
-  console.log(`[${new Date().toISOString()}] User ${user.name} logged into console ${consoleId}`);
-  res.json({ success: true });
 });
 
 // Get logged-in user for a console (arcade polls this)
@@ -975,7 +913,7 @@ app.get('/api/consoles/:consoleId/logged-in-user', (req, res) => {
 });
 
 // Clear logged-in user from console (called when returning to menu)
-app.delete('/api/consoles/:consoleId/logged-in-user', (req, res) => {
+app.delete('/api/consoles/:consoleId/logged-in-user', authMiddleware, (req, res) => {
   consoleLogins.delete(req.params.consoleId);
   pendingGameStarts.delete(req.params.consoleId);
   sendToConsole(req.params.consoleId, { type: 'userLoggedOut' });
@@ -1004,106 +942,137 @@ app.delete('/api/consoles/:consoleId/pending-game', (req, res) => {
 // ============================================
 
 // Get all console statuses with game stats
-app.get('/api/consoles', (req, res) => {
-  const now = Date.now();
-  const consoles = [];
+app.get('/api/consoles', async (req, res) => {
+  try {
+    const now = Date.now();
+    const statuses = await db.getAllConsoleStatuses();
+    const allGameStats = await db.getAllGameStats();
+    const consoles = [];
 
-  consoleStatuses.forEach((status, id) => {
-    const timeSinceLastSeen = now - status.lastSeen;
-    const isOffline = timeSinceLastSeen > 120000;
-    const stats = gameStats.get(id) || {};
+    statuses.forEach(status => {
+      const timeSinceLastSeen = now - (status.lastSeen || 0);
+      const isOffline = timeSinceLastSeen > 120000;
+      const stats = allGameStats[status.consoleId] || {};
 
-    consoles.push({
-      ...status,
-      ...stats,
-      status: isOffline ? 'offline' : status.status,
-      lastSeenText: formatLastSeen(timeSinceLastSeen),
-      sessionDuration: stats.isPlaying && stats.currentSessionStart
-        ? formatDuration(now - stats.currentSessionStart)
-        : null,
+      consoles.push({
+        ...status,
+        ...stats,
+        status: isOffline ? 'offline' : status.status,
+        lastSeenText: formatLastSeen(timeSinceLastSeen),
+        sessionDuration: stats.isPlaying && stats.currentSessionStart
+          ? formatDuration(now - stats.currentSessionStart)
+          : null,
+      });
     });
-  });
 
-  consoles.sort((a, b) => a.consoleId.localeCompare(b.consoleId));
-  res.json(consoles);
+    consoles.sort((a, b) => a.consoleId.localeCompare(b.consoleId));
+    res.json(consoles);
+  } catch (e) {
+    console.error('[API] Error getting consoles:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Get single console details
-app.get('/api/consoles/:id', (req, res) => {
-  const status = consoleStatuses.get(req.params.id);
-  const stats = gameStats.get(req.params.id);
+app.get('/api/consoles/:id', async (req, res) => {
+  try {
+    const status = await db.getConsoleStatus(req.params.id);
+    const stats = await db.getGameStats(req.params.id);
 
-  if (!status) {
-    return res.status(404).json({ error: 'Console not found' });
+    if (!status) {
+      return res.status(404).json({ error: 'Console not found' });
+    }
+
+    const timeSinceLastSeen = Date.now() - (status.lastSeen || 0);
+
+    res.json({
+      ...status,
+      ...stats,
+      lastSeenText: formatLastSeen(timeSinceLastSeen),
+      sessionDuration: stats?.isPlaying && stats?.currentSessionStart
+        ? formatDuration(Date.now() - stats.currentSessionStart)
+        : null,
+    });
+  } catch (e) {
+    console.error('[API] Error getting console:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  const timeSinceLastSeen = Date.now() - status.lastSeen;
-
-  res.json({
-    ...status,
-    ...stats,
-    lastSeenText: formatLastSeen(timeSinceLastSeen),
-    sessionDuration: stats?.isPlaying && stats?.currentSessionStart
-      ? formatDuration(Date.now() - stats.currentSessionStart)
-      : null,
-  });
 });
 
 // Get fleet summary stats
-app.get('/api/stats', (req, res) => {
-  const now = Date.now();
-  let online = 0, offline = 0, warning = 0, playing = 0;
-  let totalGamesPlayed = 0;
+app.get('/api/stats', async (req, res) => {
+  try {
+    const now = Date.now();
+    const statuses = await db.getAllConsoleStatuses();
+    const allGameStats = await db.getAllGameStats();
+    let online = 0, offline = 0, warning = 0, playing = 0;
+    let totalGamesPlayed = 0;
 
-  consoleStatuses.forEach((status, id) => {
-    const timeSinceLastSeen = now - status.lastSeen;
-    const isOffline = timeSinceLastSeen > 120000;
-    const stats = gameStats.get(id);
+    statuses.forEach(status => {
+      const timeSinceLastSeen = now - (status.lastSeen || 0);
+      const isOffline = timeSinceLastSeen > 120000;
+      const stats = allGameStats[status.consoleId];
 
-    if (isOffline) {
-      offline++;
-    } else if (status.status === 'warning') {
-      warning++;
-    } else {
-      online++;
-    }
+      if (isOffline) {
+        offline++;
+      } else if (status.status === 'warning') {
+        warning++;
+      } else {
+        online++;
+      }
 
-    if (stats?.isPlaying) {
-      playing++;
-    }
+      if (stats?.isPlaying) {
+        playing++;
+      }
 
-    totalGamesPlayed += stats?.gamesPlayed || 0;
-  });
+      totalGamesPlayed += stats?.gamesPlayed || 0;
+    });
 
-  // Get top score
-  const topScore = globalLeaderboard[0] || null;
+    // Get top score from leaderboard
+    const leaderboard = await db.getLeaderboard(1);
+    const topScore = leaderboard[0] || null;
 
-  res.json({
-    online,
-    offline,
-    warning,
-    playing,
-    total: consoleStatuses.size,
-    totalGamesPlayed,
-    topScore,
-  });
+    res.json({
+      online,
+      offline,
+      warning,
+      playing,
+      total: statuses.length,
+      totalGamesPlayed,
+      topScore,
+    });
+  } catch (e) {
+    console.error('[API] Error getting stats:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Get global leaderboard
-app.get('/api/leaderboard', (req, res) => {
-  const limit = parseInt(req.query.limit) || 10;
-  res.json(globalLeaderboard.slice(0, limit));
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const leaderboard = await db.getLeaderboard(limit);
+    res.json(leaderboard);
+  } catch (e) {
+    console.error('[API] Error getting leaderboard:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Get game stats for a specific console
-app.get('/api/game/:consoleId', (req, res) => {
-  const stats = gameStats.get(req.params.consoleId);
+app.get('/api/game/:consoleId', async (req, res) => {
+  try {
+    const stats = await db.getGameStats(req.params.consoleId);
 
-  if (!stats) {
-    return res.status(404).json({ error: 'Console not found' });
+    if (!stats) {
+      return res.status(404).json({ error: 'Console not found' });
+    }
+
+    res.json(stats);
+  } catch (e) {
+    console.error('[API] Error getting game stats:', e);
+    res.status(500).json({ error: 'Internal error' });
   }
-
-  res.json(stats);
 });
 
 function formatLastSeen(ms) {
@@ -1131,7 +1100,7 @@ function formatDuration(ms) {
 app.get('/', (req, res) => {
   res.json({
     name: 'Impact Arcade API',
-    version: '1.0.0',
+    version: '2.0.0',
     status: 'running',
     endpoints: {
       health: '/health',
@@ -1144,15 +1113,71 @@ app.get('/', (req, res) => {
 });
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  try {
+    await db.pool.query('SELECT 1');
+    res.json({ status: 'ok', db: 'connected', timestamp: new Date().toISOString() });
+  } catch (e) {
+    res.status(503).json({ status: 'degraded', db: 'disconnected', timestamp: new Date().toISOString() });
+  }
 });
 
-server.listen(PORT, () => {
-  console.log(`Impactman API running on port ${PORT}`);
-  console.log(`WebSocket: ws://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Consoles: http://localhost:${PORT}/api/consoles`);
-  console.log(`Leaderboard: http://localhost:${PORT}/api/leaderboard`);
+// ============================================
+// ADMIN ENDPOINTS
+// ============================================
+
+const requireAdmin = [authMiddleware, adminMiddleware(db)];
+
+// Verify admin access (used by frontend middleware)
+app.get('/api/admin/verify', requireAdmin, (req, res) => {
+  res.json({ success: true });
 });
 
+// Cleanup test data
+app.delete('/api/admin/cleanup-test-data', requireAdmin, async (req, res) => {
+  try {
+    const deleted = await db.cleanupTestData();
+
+    // Clear in-memory maps for __test__ prefixed console IDs
+    for (const key of connectedConsoles.keys()) {
+      if (key.startsWith('__test__')) connectedConsoles.delete(key);
+    }
+    for (const key of consoleLogins.keys()) {
+      if (key.startsWith('__test__')) consoleLogins.delete(key);
+    }
+    for (const key of pendingGameStarts.keys()) {
+      if (key.startsWith('__test__')) pendingGameStarts.delete(key);
+    }
+
+    console.log(`[Admin] Test data cleaned up:`, deleted);
+    res.json({ success: true, deleted });
+  } catch (e) {
+    console.error('[Admin] Cleanup error:', e);
+    res.status(500).json({ error: 'Cleanup failed' });
+  }
+});
+
+// ============================================
+// STARTUP
+// ============================================
+
+async function start() {
+  try {
+    // Initialize database schema
+    await db.initializeDatabase();
+    console.log('[DB] Database ready');
+  } catch (e) {
+    console.error('[DB] Failed to initialize database:', e.message);
+    console.log('[DB] Server will start anyway — database features will fail until DB is available');
+  }
+
+  server.listen(PORT, () => {
+    console.log(`Impactman API v2.0 running on port ${PORT}`);
+    console.log(`WebSocket: ws://localhost:${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
+    console.log(`Consoles: http://localhost:${PORT}/api/consoles`);
+    console.log(`Leaderboard: http://localhost:${PORT}/api/leaderboard`);
+  });
+}
+
+start();

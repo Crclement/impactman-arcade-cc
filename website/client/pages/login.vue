@@ -19,6 +19,9 @@
         <p class="text-sm text-gray-500 mb-6">
           Your scores will now be automatically saved when you play.
         </p>
+        <p v-if="wsHint" class="text-xs text-amber-600 bg-amber-50 rounded-lg p-3 mb-4">
+          The arcade machine should detect you within a few seconds. If it doesn't, try pressing SPACE on the arcade to refresh.
+        </p>
         <button
           @click="navigateTo(`/dashboard/${user?.id}${consoleId ? `?console=${consoleId}` : ''}`)"
           class="w-full bg-[#16114F] text-white py-3 rounded-lg font-bold"
@@ -79,6 +82,7 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const loggedIn = ref(false)
 const user = ref<any>(null)
+const wsHint = ref(false)
 
 // Get console info from query params
 const consoleId = computed(() => route.query.console as string || '')
@@ -110,12 +114,17 @@ async function login() {
     // Notify the console that this user has logged in
     if (consoleId.value) {
       try {
-        await $fetch(`${apiBase}/api/consoles/${consoleId.value}/login`, {
+        const loginRes = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/login`, {
           method: 'POST',
           body: { userId: res.user.id },
         })
+        // If WebSocket didn't deliver, the arcade will pick it up via polling
+        if (!loginRes.wsDelivered) {
+          wsHint.value = true
+        }
       } catch (e) {
         console.error('Failed to notify console:', e)
+        wsHint.value = true
       }
     }
   } catch (e: any) {

@@ -27,7 +27,8 @@
 
             <!-- Logged-in user: score auto-saved, waiting for phone -->
             <div v-else-if="gameStore.loggedInUser && scoreSaved" class="text-center w-full">
-              <h3 class="text-xl font-bold text-[#16114F] mb-2">Score Saved!</h3>
+              <h3 class="text-xl font-bold text-[#16114F] mb-2">{{ savedOffline ? 'Score Saved Locally' : 'Score Saved!' }}</h3>
+              <p v-if="savedOffline" class="text-amber-600 text-xs mb-2">Will sync when connection returns</p>
               <p class="text-gray-600 text-sm mb-4">Nice game, {{ gameStore.loggedInUser.name }}!</p>
 
               <div class="bg-[#D9FF69] rounded-xl p-4 mb-4">
@@ -95,12 +96,15 @@
 <script lang="ts" setup>
 import { useGameStore } from '~~/store/game';
 import { useConsoleSocket } from '~~/composables/useConsoleSocket';
+import { useOfflineQueue } from '~~/composables/useOfflineQueue';
 import NicePage from './NicePage.vue';
 
 const config = useRuntimeConfig()
 const show = ref(true)
 const gameStore = useGameStore()
 const { on, send } = useConsoleSocket()
+const { enqueue, startAutoSync, stopAutoSync } = useOfflineQueue()
+const savedOffline = ref(false)
 
 // Session state
 const loading = ref(true)
@@ -110,9 +114,15 @@ const qrCodeUrl = ref<string>('')
 const scoreSaved = ref(false)
 const readyToPlay = ref(false)
 
-// Console identification
-const consoleId = ref(process.client ? (localStorage.getItem('consoleId') || 'IMP-001') : 'IMP-001')
-const raspiId = ref(process.client ? (localStorage.getItem('raspiId') || 'RPI-001') : 'RPI-001')
+const route = useRoute()
+
+// Console identification — prefer URL param, then localStorage, then default
+const consoleId = ref(process.client
+  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'IMP-001')
+  : 'IMP-001')
+const raspiId = ref(process.client
+  ? ((route.query.raspi as string) || localStorage.getItem('raspiId') || 'RPI-001')
+  : 'RPI-001')
 
 const apiBase = config.public.apiBase || 'http://localhost:3001'
 
@@ -143,6 +153,8 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 // Save or create session on mount
+let cleanupReadyToPlay: (() => void) | null = null
+
 onMounted(() => {
   if (gameStore.loggedInUser) {
     saveScoreForUser()
@@ -152,9 +164,10 @@ onMounted(() => {
 
   if (process.client) {
     window.addEventListener('keydown', handleKeydown)
+    startAutoSync()
 
     // Listen for readyToPlay via WebSocket (phone triggered replay)
-    on('readyToPlay', () => {
+    cleanupReadyToPlay = on('readyToPlay', () => {
       readyToPlay.value = true
     })
   }
@@ -163,6 +176,11 @@ onMounted(() => {
 onUnmounted(() => {
   if (process.client) {
     window.removeEventListener('keydown', handleKeydown)
+    stopAutoSync()
+    if (cleanupReadyToPlay) {
+      cleanupReadyToPlay()
+      cleanupReadyToPlay = null
+    }
   }
 })
 
@@ -173,8 +191,11 @@ async function saveScoreForUser() {
   try {
     const userId = gameStore.loggedInUser!.id
 
+    const token = process.client ? localStorage.getItem('impactarcade_token') : null
+
     const res = await $fetch<any>(`${apiBase}/api/users/${userId}/scores`, {
       method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: {
         consoleId: consoleId.value,
         raspiId: raspiId.value,
@@ -193,7 +214,18 @@ async function saveScoreForUser() {
     }
   } catch (e: any) {
     console.error('Failed to save score:', e)
-    createSession()
+    // Enqueue for offline sync
+    const token = process.client ? localStorage.getItem('impactarcade_token') : null
+    enqueue(`${apiBase}/api/users/${gameStore.loggedInUser!.id}/scores`, 'POST', {
+      consoleId: consoleId.value,
+      raspiId: raspiId.value,
+      score: gameStore.global.currentScore,
+      level: gameStore.global.currentLevel,
+      bags: gameStore.global.currentBags,
+      plasticRemoved: gameStore.global.currentBags * 0.1,
+    }, token ? { Authorization: `Bearer ${token}` } : {})
+    scoreSaved.value = true
+    savedOffline.value = true
   } finally {
     loading.value = false
   }
@@ -221,7 +253,12 @@ async function createSession() {
     qrCodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}`
   } catch (e: any) {
     console.error('Failed to create session:', e)
-    error.value = 'Failed to generate QR code. Please try again.'
+    // If offline, show a message but don't block the user
+    if (!navigator.onLine) {
+      error.value = 'You\'re offline. Score will sync when connection returns.'
+    } else {
+      error.value = 'Failed to generate QR code. Please try again.'
+    }
   } finally {
     loading.value = false
   }
@@ -258,10 +295,12 @@ function startGame() {
 
 function returnToMenu() {
   // Clear user and go back to menu
+  const token = process.client ? localStorage.getItem('impactarcade_token') : null
   gameStore.clearUser()
 
   $fetch(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`, {
     method: 'DELETE',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   }).catch(() => {})
 
   gameStore.$patch({

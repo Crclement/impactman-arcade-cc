@@ -151,6 +151,11 @@ const consoleId = computed(() => route.query.console as string || '')
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+function getAuthHeaders() {
+  const token = process.client ? localStorage.getItem('impactarcade_token') : null
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 // Play again state
 const playAgainLoading = ref(false)
 const playAgainSent = ref(false)
@@ -294,6 +299,7 @@ async function handleApplePayClick() {
       const apiBase = config.public.apiBase || 'http://localhost:3001'
       const result = await $fetch<any>(`${apiBase}/api/payments/apple-pay`, {
         method: 'POST',
+        headers: getAuthHeaders(),
         body: {
           userId: userData.value.id,
           sourceId: tokenResult.token,
@@ -332,6 +338,7 @@ async function triggerPlayAgain() {
     const apiBase = config.public.apiBase || 'http://localhost:3001'
     const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/start-game`, {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: { userId: userData.value.id },
     })
 
