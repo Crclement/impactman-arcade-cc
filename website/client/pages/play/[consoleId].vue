@@ -77,21 +77,29 @@
           </div>
         </div>
 
-        <!-- USE CREDIT button (when credits available) -->
-        <button
-          v-if="credits.availablePlays > 0"
-          @click="startGame"
-          :disabled="starting"
-          :class="[
-            'w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl transition border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5 mb-2',
-            credits.availablePlays > 0 && !starting ? 'button-flash' : ''
-          ]"
-        >
-          {{ starting ? 'Starting...' : 'Use Credit' }}
-        </button>
-        <p v-if="credits.availablePlays > 0" class="text-white/40 text-xs text-center mb-5">
-          This will activate the Play button on the arcade
-        </p>
+        <!-- Credit used success (inline) -->
+        <div v-if="creditUsed" class="bg-[#00DC82]/20 border border-[#00DC82]/40 rounded-2xl p-4 text-center mb-5">
+          <p class="text-[#00DC82] font-bold text-lg">Credit Used!</p>
+          <p class="text-white font-bold text-sm mt-1">The Play button is now flashing</p>
+          <p class="text-white/50 text-sm mt-1">Press PLAY on the arcade to start!</p>
+        </div>
+
+        <!-- USE CREDIT button (when credits available and not already used) -->
+        <div v-else-if="credits.availablePlays > 0">
+          <button
+            @click="startGame"
+            :disabled="starting"
+            :class="[
+              'w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl transition border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5 mb-2',
+              !starting ? 'button-flash' : ''
+            ]"
+          >
+            {{ starting ? 'Starting...' : 'Use Credit' }}
+          </button>
+          <p class="text-white/40 text-xs text-center mb-5">
+            This will activate the Play button on the arcade
+          </p>
+        </div>
 
         <!-- No credits message -->
         <div v-else class="bg-white/10 rounded-2xl p-4 text-center mb-5">
@@ -149,18 +157,6 @@
         </button>
       </div>
 
-      <!-- GAME STARTING STATE -->
-      <div v-else-if="state === 'game-starting'" class="text-center">
-        <div class="text-8xl mb-4 animate-bounce">🎮</div>
-        <h2 class="text-[#D9FF69] text-3xl font-bold mb-2">Credit Used!</h2>
-        <p class="text-white text-lg font-bold mb-1">The Play button is now flashing</p>
-        <p class="text-white/70 mb-4">Press PLAY on the arcade to start!</p>
-        <p class="text-white/40 text-sm mb-6">{{ credits.availablePlays }} credit{{ credits.availablePlays === 1 ? '' : 's' }} remaining</p>
-        <button @click="backToDashboard" class="text-white/50 text-sm underline hover:text-white/70 transition">
-          Back to dashboard
-        </button>
-      </div>
-
     </div>
 
     <!-- Footer -->
@@ -183,7 +179,7 @@ const config = useRuntimeConfig()
 const consoleId = computed(() => route.params.consoleId as string)
 
 // State machine
-const state = ref<'loading' | 'console-error' | 'login' | 'dashboard' | 'game-starting'>('loading')
+const state = ref<'loading' | 'console-error' | 'login' | 'dashboard'>('loading')
 
 // User + auth
 const user = ref<any>(null)
@@ -201,6 +197,7 @@ const gameStats = ref<any>({ highScore: 0, gamesPlayed: 0, bestLevel: 1 })
 // Game start
 const starting = ref(false)
 const gameError = ref<string | null>(null)
+const creditUsed = ref(false)
 
 // Apple Pay
 const applePaySupported = ref(false)
@@ -391,7 +388,7 @@ async function startGame() {
       if (res.creditsRemaining !== undefined) {
         credits.value.paidCredits = res.creditsRemaining
       }
-      state.value = 'game-starting'
+      creditUsed.value = true
     }
   } catch (e: any) {
     if (e.data?.error === 'User not found' || e.status === 404) {
@@ -406,16 +403,6 @@ async function startGame() {
     }
   } finally {
     starting.value = false
-  }
-}
-
-async function backToDashboard() {
-  state.value = 'loading'
-  await loadDashboardData()
-  state.value = 'dashboard'
-  if (process.client) {
-    await nextTick()
-    await initializeApplePay()
   }
 }
 
@@ -536,6 +523,7 @@ async function devAddCredit() {
       credits.value.paidCredits = res.credits
       credits.value.availablePlays = res.availablePlays
       credits.value.freePlayUsed = true
+      creditUsed.value = false // Reset so Use Credit button reappears
       devCreditSuccess.value = true
       setTimeout(() => { devCreditSuccess.value = false }, 3000)
     }

@@ -154,6 +154,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 // Save or create session on mount
 let cleanupReadyToPlay: (() => void) | null = null
+let autoReturnTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
   if (gameStore.loggedInUser) {
@@ -169,7 +170,17 @@ onMounted(() => {
     // Listen for readyToPlay via WebSocket (phone triggered replay)
     cleanupReadyToPlay = on('readyToPlay', () => {
       readyToPlay.value = true
+      // Reset auto-return timer when phone triggers replay
+      if (autoReturnTimer) clearTimeout(autoReturnTimer)
     })
+
+    // Auto-return to menu after 60 seconds of inactivity
+    // This ensures the arcade resets if a player walks away
+    autoReturnTimer = setTimeout(() => {
+      if (!readyToPlay.value) {
+        returnToMenu()
+      }
+    }, 60_000)
   }
 })
 
@@ -180,6 +191,10 @@ onUnmounted(() => {
     if (cleanupReadyToPlay) {
       cleanupReadyToPlay()
       cleanupReadyToPlay = null
+    }
+    if (autoReturnTimer) {
+      clearTimeout(autoReturnTimer)
+      autoReturnTimer = null
     }
   }
 })
@@ -295,6 +310,7 @@ function returnToMenu() {
   // Clear user and go back to menu
   const token = process.client ? localStorage.getItem('impactarcade_token') : null
   gameStore.clearUser()
+  gameStore.readyToPlay = false
 
   $fetch(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`, {
     method: 'DELETE',
