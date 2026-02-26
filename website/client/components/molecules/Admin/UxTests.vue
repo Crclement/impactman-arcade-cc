@@ -263,7 +263,33 @@ const tests = ref<TestItem[]>([
     }
   }),
 
-  // 15. Offline Queue
+  // 15. Stale User → 404
+  makeTest('Stale User → 404', 'POST /api/consoles/TEST-001/start-game with fake userId returns 404', async () => {
+    try {
+      await $fetch<any>(`${apiBase}/api/consoles/TEST-001/start-game`, {
+        method: 'POST',
+        body: { userId: 'usr_nonexistent_stale_user' },
+      })
+      throw new Error('Expected 404 but request succeeded')
+    } catch (e: any) {
+      const status = e?.response?.status || e?.status
+      if (status === 404) return // expected
+      throw e
+    }
+  }),
+
+  // 16. Dev Add Credit
+  makeTest('Dev Add Credit', 'POST /api/users/:id/dev-credit — Adds credit and returns updated count', async () => {
+    if (!ctx.userId) throw new Error('Signup test must pass first')
+    const res = await $fetch<any>(`${apiBase}/api/users/${ctx.userId}/dev-credit`, {
+      method: 'POST',
+    })
+    if (!res.success) throw new Error(`Expected success=true, got ${JSON.stringify(res)}`)
+    if (typeof res.credits !== 'number') throw new Error('Expected credits number')
+    if (typeof res.availablePlays !== 'number') throw new Error('Expected availablePlays number')
+  }),
+
+  // 17. Offline Queue
   makeTest('Offline Queue', 'Enqueue + dequeue via useOfflineQueue', async () => {
     const { enqueue, syncQueue } = useOfflineQueue()
 
