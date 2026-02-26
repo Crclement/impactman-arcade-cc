@@ -42,6 +42,10 @@ export function useConsoleSocket() {
         }
 
         if (data.type === 'readyToPlay') {
+          // Ensure user is set immediately alongside readyToPlay
+          if (data.userId && !store.loggedInUser) {
+            store.loggedInUser = { id: data.userId, name: data.userName, email: '' }
+          }
           store.readyToPlay = true
         }
 
