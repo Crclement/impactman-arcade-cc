@@ -79,11 +79,11 @@ const raspiId = ref(process.client
 
 const apiBase = config.public.apiBase || 'http://localhost:3001'
 
-// Login QR URL - links to login page with console info
+// Login QR URL - links to unified play page
 const loginQrUrl = computed(() => {
   const baseUrl = process.client ? window.location.origin : ''
-  const loginUrl = `${baseUrl}/login?console=${consoleId.value}&raspi=${raspiId.value}`
-  return `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(loginUrl)}`
+  const playUrl = `${baseUrl}/play/${consoleId.value}`
+  return `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(playUrl)}`
 })
 
 // Focus the Unity canvas for keyboard input

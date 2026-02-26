@@ -226,6 +226,22 @@ const tests = ref<TestItem[]>([
     })
   }),
 
+  // Dev credit
+  makeTest('POST /api/users/:id/dev-credit', 'Adds a dev credit — returns success, credits, availablePlays', async () => {
+    const login = await $fetch<any>(`${apiBase}/api/users/login`, {
+      method: 'POST',
+      body: { email: `__test__doc_devcredit_${Date.now()}@test.impactarcade.com`, name: 'Dev Credit Test' },
+    })
+    const res = await $fetch<any>(`${apiBase}/api/users/${login.user.id}/dev-credit`, {
+      method: 'POST',
+    })
+    if (!res.success) throw new Error('Missing success')
+    if (typeof res.credits !== 'number') throw new Error('Missing credits (number)')
+    if (typeof res.availablePlays !== 'number') throw new Error('Missing availablePlays (number)')
+    // New user: free play (1) + 1 dev credit = 2 available plays
+    if (res.availablePlays < 2) throw new Error(`Expected at least 2 availablePlays, got ${res.availablePlays}`)
+  }),
+
   // Response shape checks for documented fields
   makeTest('Score Save Response', 'README: POST scores returns success + user + scoreEntry', async () => {
     const login = await $fetch<any>(`${apiBase}/api/users/login`, {

@@ -126,11 +126,11 @@ const raspiId = ref(process.client
 
 const apiBase = config.public.apiBase || 'http://localhost:3001'
 
-// Login QR for new players
+// Login QR for new players - links to unified play page
 const loginQrUrl = computed(() => {
   const baseUrl = process.client ? window.location.origin : ''
-  const loginUrl = `${baseUrl}/login?console=${consoleId.value}&raspi=${raspiId.value}`
-  return `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(loginUrl)}`
+  const playUrl = `${baseUrl}/play/${consoleId.value}`
+  return `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(playUrl)}`
 })
 
 // Claim URL for guest sessions
