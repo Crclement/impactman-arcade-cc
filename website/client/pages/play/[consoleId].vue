@@ -334,8 +334,8 @@ async function fetchCredits() {
   try {
     const res = await $fetch<any>(`${apiBase.value}/api/users/${user.value.id}/credits`)
     credits.value = res
-  } catch (e) {
-    console.error('Failed to fetch credits:', e)
+  } catch (_) {
+    // silent — credits will show default
   }
 }
 
@@ -350,8 +350,8 @@ async function fetchScores() {
         bestLevel: Math.max(...res.scores.map((s: any) => s.level || 1)),
       }
     }
-  } catch (e) {
-    console.error('Failed to fetch scores:', e)
+  } catch (_) {
+    // silent — stats will show defaults
   }
 }
 
@@ -401,10 +401,7 @@ async function initializeApplePay() {
   try {
     const paymentConfig = await $fetch<any>(`${apiBase.value}/api/payments/config`)
 
-    if (!paymentConfig.applicationId) {
-      console.log('Square not configured')
-      return
-    }
+    if (!paymentConfig.applicationId) return
 
     if (!(window as any).Square) {
       const script = document.createElement('script')
@@ -416,8 +413,8 @@ async function initializeApplePay() {
     } else {
       await setupApplePay(paymentConfig)
     }
-  } catch (e) {
-    console.error('Failed to initialize Apple Pay:', e)
+  } catch (_) {
+    // silent — Apple Pay just won't be offered
   }
 }
 
@@ -453,8 +450,7 @@ async function setupApplePay(paymentConfig: any) {
         container.appendChild(button)
       }
     }
-  } catch (e) {
-    console.log('Apple Pay not available:', e)
+  } catch (_) {
     applePaySupported.value = false
   }
 }
@@ -494,7 +490,6 @@ async function handleApplePayClick() {
       paymentError.value = tokenResult.errors?.[0]?.message || 'Payment cancelled'
     }
   } catch (e: any) {
-    console.error('Apple Pay error:', e)
     paymentError.value = e.data?.error || 'Payment failed'
   } finally {
     paymentLoading.value = false
@@ -516,8 +511,8 @@ async function devAddCredit() {
       credits.value.paidCredits = res.credits
       credits.value.availablePlays = res.availablePlays
     }
-  } catch (e: any) {
-    console.error('Dev credit error:', e)
+  } catch (_) {
+    // silent
   } finally {
     devCreditLoading.value = false
   }
