@@ -135,16 +135,33 @@
           </div>
           <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container mb-3"></div>
 
-          <!-- Square Card form -->
-          <div id="card-container" class="mb-3"></div>
+          <!-- Square Card payment -->
           <button
-            v-if="cardReady"
-            @click="handleCardPayment"
-            :disabled="cardPaymentLoading"
-            class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition disabled:opacity-50 mb-3"
+            v-if="!showCardForm && squareReady"
+            @click="revealCardForm"
+            class="w-full bg-white text-[#16114F] py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mb-3 border border-white/20"
           >
-            {{ cardPaymentLoading ? 'Processing...' : 'Buy Token — $1' }}
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Buy Token — $1
           </button>
+          <div v-if="showCardForm" class="mb-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00DC82" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span class="text-white/40 text-[10px]">Secured by Square</span>
+              </div>
+              <button @click="showCardForm = false" class="text-white/30 text-xs hover:text-white/50">Cancel</button>
+            </div>
+            <div id="card-container" class="mb-3 bg-white rounded-lg p-1"></div>
+            <button
+              v-if="cardReady"
+              @click="handleCardPayment"
+              :disabled="cardPaymentLoading"
+              class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition disabled:opacity-50"
+            >
+              {{ cardPaymentLoading ? 'Processing...' : 'Pay $1' }}
+            </button>
+          </div>
 
           <!-- Dev: Add Token -->
           <button
@@ -252,6 +269,8 @@ const squarePayments = ref<any>(null)
 const applePay = ref<any>(null)
 
 // Square Card
+const squareReady = ref(false)
+const showCardForm = ref(false)
 const cardReady = ref(false)
 const cardInstance = ref<any>(null)
 const cardPaymentLoading = ref(false)
@@ -546,16 +565,8 @@ async function setupPayments(paymentConfig: any) {
     applePaySupported.value = false
   }
 
-  // Card form (always available)
-  try {
-    const card = await payments.card()
-    await nextTick()
-    await card.attach('#card-container')
-    cardInstance.value = card
-    cardReady.value = true
-  } catch (_) {
-    // silent — card form won't be shown
-  }
+  // Mark Square SDK as ready — card form attaches on user click
+  squareReady.value = true
 }
 
 async function handleApplePayClick() {
@@ -600,6 +611,22 @@ async function handleApplePayClick() {
 }
 
 // ── Card payment ──
+
+async function revealCardForm() {
+  showCardForm.value = true
+  if (cardInstance.value) return // Already initialized
+
+  await nextTick()
+  try {
+    const card = await squarePayments.value.card()
+    await nextTick()
+    await card.attach('#card-container')
+    cardInstance.value = card
+    cardReady.value = true
+  } catch (_) {
+    showCardForm.value = false
+  }
+}
 
 async function handleCardPayment() {
   if (!cardInstance.value || !user.value) return
