@@ -31,7 +31,7 @@
           <div class="bg-white/95 rounded-xl p-3 shadow-lg">
             <img :src="loginQrUrl" alt="Scan to Play" class="w-32 h-32 rounded" />
           </div>
-          <p class="font-retro text-[#D9FF69] text-2xl mt-3 tracking-wide">SCAN TO PLAY</p>
+          <p class="heartbeat font-retro text-[#D9FF69] text-2xl mt-3 tracking-wide">SCAN TO PLAY</p>
           <p class="text-white/50 text-xs mt-1">Scan with your phone camera</p>
         </div>
       </template>
@@ -274,6 +274,30 @@ watch(() => store.sound, (soundOn) => {
   to
     opacity: 1
     transform: translateY(0)
+
+.heartbeat
+  animation: heartbeat 2s ease-in-out infinite
+  text-shadow: 0 0 8px rgba(217, 255, 105, 0.4)
+
+@keyframes heartbeat
+  0%
+    transform: scale(1)
+    text-shadow: 0 0 8px rgba(217, 255, 105, 0.4)
+  7%
+    transform: scale(1.15)
+    text-shadow: 0 0 16px rgba(217, 255, 105, 0.8)
+  14%
+    transform: scale(1)
+    text-shadow: 0 0 8px rgba(217, 255, 105, 0.4)
+  21%
+    transform: scale(1.15)
+    text-shadow: 0 0 16px rgba(217, 255, 105, 0.8)
+  28%
+    transform: scale(1)
+    text-shadow: 0 0 8px rgba(217, 255, 105, 0.4)
+  100%
+    transform: scale(1)
+    text-shadow: 0 0 8px rgba(217, 255, 105, 0.4)
 
 .retro-blink
   animation: retro-blink 0.8s steps(1) infinite
