@@ -28,14 +28,15 @@
       <!-- Logged-in user greeting -->
       <div v-if="store.loggedInUser" class="logged-in-badge bg-[#D9FF69] rounded-lg px-5 py-2 mb-3 shadow-lg text-center border-2 border-[#16114F]">
         <p class="text-[#16114F] font-bold text-sm">{{ store.loggedInUser.name }}</p>
-        <p class="text-[#16114F]/60 text-xs">Scores will auto-save</p>
+        <p v-if="store.readyToPlay" class="text-[#16114F]/80 text-xs font-bold">PRESS PLAY!</p>
+        <p v-else class="text-[#16114F]/60 text-xs">Use a credit on your phone to play</p>
       </div>
 
       <!-- Play button and QR code inline -->
       <div class="flex items-center gap-4">
         <button
           @click="() => store.StartGame()"
-          :class="{ 'button-flash': store.loggedInUser }"
+          :class="{ 'button-flash': store.readyToPlay }"
           class="button-play font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
           <span class="text-play">Play</span>
         </button>
@@ -115,7 +116,7 @@ const APP_VERSION = 'v2.1.0 — QR Unified Dashboard'
 onMounted(() => {
   if (process.client) {
     console.log(
-      `%c 🕹️ IMPACT ARCADE ${APP_VERSION} `,
+      `%c 🕹️ Impact-man ${APP_VERSION} `,
       'background: #D9FF69; color: #16114F; font-size: 16px; font-weight: bold; padding: 6px 12px; border-radius: 4px;'
     )
     console.log(
@@ -172,6 +173,13 @@ onMounted(() => {
       clearInterval(loginPollInterval)
       disconnect()
     })
+  }
+})
+
+// Reset readyToPlay when game actually starts
+watch(() => store.global.gameScreen, (screen) => {
+  if (screen === 'playing') {
+    store.readyToPlay = false
   }
 })
 

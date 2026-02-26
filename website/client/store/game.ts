@@ -17,6 +17,7 @@ export interface GameStore {
   allies: string[],
   unityInstance?: any,
   loggedInUser: LoggedInUser | null,
+  readyToPlay: boolean,
 }
 
 export interface GameScore {
@@ -50,6 +51,7 @@ export const useGameStore = defineStore('game', {
     unityInstance: null,
     allies: [],
     loggedInUser: null,
+    readyToPlay: false,
   }),
   actions: {
     loadUser() {

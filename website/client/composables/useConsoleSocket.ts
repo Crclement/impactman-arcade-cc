@@ -38,6 +38,11 @@ export function useConsoleSocket() {
 
         if (data.type === 'userLoggedOut') {
           store.loggedInUser = null
+          store.readyToPlay = false
+        }
+
+        if (data.type === 'readyToPlay') {
+          store.readyToPlay = true
         }
 
         // Notify listeners

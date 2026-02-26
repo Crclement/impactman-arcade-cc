@@ -1,12 +1,5 @@
 <template>
   <div class="min-h-screen bg-[#16114F]">
-    <!-- Header with Logo -->
-    <div class="py-6 px-4">
-      <div class="max-w-4xl mx-auto">
-        <img src="/images/impact-arcade-logo.png" alt="Impact Arcade" class="h-14 mx-auto" />
-      </div>
-    </div>
-
     <!-- Loading State -->
     <div v-if="loading" class="flex items-center justify-center py-20">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#D9FF69]"></div>
@@ -61,11 +54,15 @@
           :disabled="playAgainLoading"
           class="w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl hover:bg-[#a855f7] transition disabled:opacity-50 border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5"
         >
-          {{ playAgainLoading ? 'Sending...' : 'Play Again' }}
+          {{ playAgainLoading ? 'Sending...' : 'Use Credit' }}
         </button>
+        <p v-if="credits.availablePlays > 0 && !playAgainSent" class="text-white/40 text-xs text-center mt-2">
+          This will activate the Play button on the arcade
+        </p>
         <div v-else-if="playAgainSent" class="bg-[#00DC82]/20 border border-[#00DC82]/40 rounded-2xl p-4 text-center">
-          <p class="text-[#00DC82] font-bold text-lg">Ready!</p>
-          <p class="text-white/50 text-sm mt-1">Press Play on the arcade</p>
+          <p class="text-[#00DC82] font-bold text-lg">Credit Used!</p>
+          <p class="text-white font-bold text-sm mt-1">The Play button is now flashing</p>
+          <p class="text-white/50 text-sm mt-1">Press PLAY on the arcade to start!</p>
         </div>
         <div v-else class="bg-white/10 rounded-2xl p-4 text-center">
           <p class="text-white/60 font-bold">No credits remaining</p>

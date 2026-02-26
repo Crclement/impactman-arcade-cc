@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-[#16114F] flex flex-col">
     <!-- Header -->
     <div class="p-4 text-center">
-      <h1 class="text-[#D9FF69] text-2xl font-bold">Impact Arcade</h1>
+      <h1 class="text-[#D9FF69] text-2xl font-bold">Impact-man</h1>
     </div>
 
     <!-- Main Content -->
@@ -77,38 +77,55 @@
           </div>
         </div>
 
-        <!-- PLAY button (when credits available) -->
+        <!-- USE CREDIT button (when credits available) -->
         <button
           v-if="credits.availablePlays > 0"
           @click="startGame"
           :disabled="starting"
           :class="[
-            'w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl transition border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5 mb-5',
+            'w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl transition border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5 mb-2',
             credits.availablePlays > 0 && !starting ? 'button-flash' : ''
           ]"
         >
-          {{ starting ? 'Starting...' : 'PLAY' }}
+          {{ starting ? 'Starting...' : 'Use Credit' }}
         </button>
+        <p v-if="credits.availablePlays > 0" class="text-white/40 text-xs text-center mb-5">
+          This will activate the Play button on the arcade
+        </p>
 
-        <!-- No credits state -->
-        <div v-else class="mb-5 space-y-3">
-          <div class="bg-white/10 rounded-2xl p-4 text-center">
-            <p class="text-white/60 font-bold">No credits remaining</p>
-            <p class="text-white/40 text-sm mt-1">Add a credit to play</p>
-          </div>
+        <!-- No credits message -->
+        <div v-else class="bg-white/10 rounded-2xl p-4 text-center mb-5">
+          <p class="text-white/60 font-bold">No credits remaining</p>
+          <p class="text-white/40 text-sm mt-1">Add a credit below to play</p>
+        </div>
+
+        <!-- Error from start-game -->
+        <p v-if="gameError" class="text-red-400 text-sm text-center mb-4">{{ gameError }}</p>
+
+        <!-- Add Credits section (always visible) -->
+        <div class="bg-white/5 rounded-2xl p-4 mb-5 border border-white/10">
+          <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Credits</p>
 
           <!-- Apple Pay -->
           <div v-if="paymentLoading" class="flex justify-center py-3">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D9FF69]"></div>
           </div>
           <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container"></div>
-          <p v-else class="text-white/40 text-sm text-center">Apple Pay not available on this device</p>
-          <div v-if="paymentError" class="text-center text-red-400 text-sm">{{ paymentError }}</div>
-          <div v-if="paymentSuccess" class="text-center text-[#D9FF69] font-bold">Credit added!</div>
-        </div>
 
-        <!-- Error from start-game -->
-        <p v-if="gameError" class="text-red-400 text-sm text-center mb-4">{{ gameError }}</p>
+          <!-- Dev: Add Credit -->
+          <button
+            @click="devAddCredit"
+            :disabled="devCreditLoading"
+            class="w-full border-2 border-dashed border-white/20 text-white/40 py-3 rounded-xl text-sm transition hover:border-white/40 hover:text-white/60 disabled:opacity-50"
+            :class="{ 'mt-3': applePaySupported }"
+          >
+            {{ devCreditLoading ? 'Adding...' : 'Dev: Add Credit' }}
+          </button>
+
+          <div v-if="paymentError" class="text-center text-red-400 text-sm mt-2">{{ paymentError }}</div>
+          <div v-if="paymentSuccess" class="text-center text-[#D9FF69] font-bold mt-2">Credit added!</div>
+          <div v-if="devCreditSuccess" class="text-center text-[#D9FF69] font-bold mt-2">Dev credit added!</div>
+        </div>
 
         <!-- Compact stats grid -->
         <div class="grid grid-cols-3 gap-3 mb-5">
@@ -126,15 +143,6 @@
           </div>
         </div>
 
-        <!-- Dev: Add Credit -->
-        <button
-          @click="devAddCredit"
-          :disabled="devCreditLoading"
-          class="w-full border-2 border-dashed border-white/20 text-white/40 py-3 rounded-xl text-sm transition hover:border-white/40 hover:text-white/60 disabled:opacity-50 mb-4"
-        >
-          {{ devCreditLoading ? 'Adding...' : 'Dev: Add Credit' }}
-        </button>
-
         <!-- Sign out -->
         <button @click="signOut" class="w-full text-white/30 text-xs py-2 hover:text-white/50 transition">
           Sign out
@@ -144,8 +152,9 @@
       <!-- GAME STARTING STATE -->
       <div v-else-if="state === 'game-starting'" class="text-center">
         <div class="text-8xl mb-4 animate-bounce">🎮</div>
-        <h2 class="text-[#D9FF69] text-3xl font-bold mb-2">GO!</h2>
-        <p class="text-white/70 mb-4">Press PLAY on the arcade!</p>
+        <h2 class="text-[#D9FF69] text-3xl font-bold mb-2">Credit Used!</h2>
+        <p class="text-white text-lg font-bold mb-1">The Play button is now flashing</p>
+        <p class="text-white/70 mb-4">Press PLAY on the arcade to start!</p>
         <p class="text-white/40 text-sm mb-6">{{ credits.availablePlays }} credit{{ credits.availablePlays === 1 ? '' : 's' }} remaining</p>
         <button @click="backToDashboard" class="text-white/50 text-sm underline hover:text-white/70 transition">
           Back to dashboard
@@ -164,6 +173,10 @@
 </template>
 
 <script lang="ts" setup>
+definePageMeta({
+  layout: 'naked'
+})
+
 const route = useRoute()
 const config = useRuntimeConfig()
 
@@ -199,6 +212,7 @@ const applePay = ref<any>(null)
 
 // Dev credit
 const devCreditLoading = ref(false)
+const devCreditSuccess = ref(false)
 
 // API base
 const apiBase = computed(() => {
@@ -217,7 +231,7 @@ const APP_VERSION = 'v2.1.0 — QR Unified Dashboard'
 
 onMounted(async () => {
   console.log(
-    `%c 🕹️ IMPACT ARCADE ${APP_VERSION} `,
+    `%c 🕹️ Impact-man ${APP_VERSION} `,
     'background: #D9FF69; color: #16114F; font-size: 16px; font-weight: bold; padding: 6px 12px; border-radius: 4px;'
   )
   console.log(
@@ -501,6 +515,7 @@ async function handleApplePayClick() {
 async function devAddCredit() {
   if (!user.value) return
   devCreditLoading.value = true
+  devCreditSuccess.value = false
 
   try {
     const res = await $fetch<any>(`${apiBase.value}/api/users/${user.value.id}/dev-credit`, {
@@ -510,6 +525,9 @@ async function devAddCredit() {
     if (res.success) {
       credits.value.paidCredits = res.credits
       credits.value.availablePlays = res.availablePlays
+      credits.value.freePlayUsed = true
+      devCreditSuccess.value = true
+      setTimeout(() => { devCreditSuccess.value = false }, 3000)
     }
   } catch (_) {
     // silent
