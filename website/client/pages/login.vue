@@ -20,7 +20,7 @@
           Your scores will now be automatically saved when you play.
         </p>
         <button
-          @click="navigateTo(`/dashboard/${user?.id}`)"
+          @click="navigateTo(`/dashboard/${user?.id}${consoleId ? `?console=${consoleId}` : ''}`)"
           class="w-full bg-[#16114F] text-white py-3 rounded-lg font-bold"
         >
           View My Dashboard

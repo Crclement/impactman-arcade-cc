@@ -861,16 +861,18 @@ app.post('/api/consoles/:consoleId/start-game', (req, res) => {
     expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
   });
 
-  // Send message to console to show PLAY button
-  const sent = sendToConsole(consoleId, {
+  // Also set console login so arcade knows who's playing
+  consoleLogins.set(consoleId, {
+    user: { id: user.id, name: user.name, email: user.email },
+    loggedInAt: new Date().toISOString(),
+  });
+
+  // Try to send WebSocket message (optional - arcade may be polling instead)
+  sendToConsole(consoleId, {
     type: 'readyToPlay',
     userId,
     userName: user.name,
   });
-
-  if (!sent) {
-    return res.status(500).json({ error: 'Failed to communicate with console' });
-  }
 
   console.log(`[${new Date().toISOString()}] Ready to play: ${user.email} on ${consoleId}`);
 
@@ -969,6 +971,24 @@ app.get('/api/consoles/:consoleId/logged-in-user', (req, res) => {
 // Clear logged-in user from console (called when returning to menu)
 app.delete('/api/consoles/:consoleId/logged-in-user', (req, res) => {
   consoleLogins.delete(req.params.consoleId);
+  pendingGameStarts.delete(req.params.consoleId);
+  res.json({ success: true });
+});
+
+// Check if a game start is pending for this console (arcade polls this)
+app.get('/api/consoles/:consoleId/pending-game', (req, res) => {
+  const pending = pendingGameStarts.get(req.params.consoleId);
+  if (pending && pending.expiresAt > Date.now()) {
+    res.json({ pending: true, userId: pending.userId, userName: pending.userName });
+  } else {
+    if (pending) pendingGameStarts.delete(req.params.consoleId);
+    res.json({ pending: false });
+  }
+});
+
+// Clear pending game after arcade starts it
+app.delete('/api/consoles/:consoleId/pending-game', (req, res) => {
+  pendingGameStarts.delete(req.params.consoleId);
   res.json({ success: true });
 });
 

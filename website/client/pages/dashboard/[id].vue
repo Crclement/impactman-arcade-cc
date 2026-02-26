@@ -53,6 +53,27 @@
         </div>
       </div>
 
+      <!-- Play Again on Console -->
+      <div v-if="consoleId" class="mb-6">
+        <button
+          v-if="credits.availablePlays > 0 && !playAgainSent"
+          @click="triggerPlayAgain"
+          :disabled="playAgainLoading"
+          class="w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl hover:bg-[#a855f7] transition disabled:opacity-50 border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5"
+        >
+          {{ playAgainLoading ? 'Sending...' : 'Play Again' }}
+        </button>
+        <div v-else-if="playAgainSent" class="bg-[#00DC82]/20 border border-[#00DC82]/40 rounded-2xl p-4 text-center">
+          <p class="text-[#00DC82] font-bold text-lg">Ready!</p>
+          <p class="text-white/50 text-sm mt-1">Press Play on the arcade</p>
+        </div>
+        <div v-else class="bg-white/10 rounded-2xl p-4 text-center">
+          <p class="text-white/60 font-bold">No credits remaining</p>
+          <p class="text-white/40 text-sm mt-1">Add credits above to play again</p>
+        </div>
+        <div v-if="playAgainError" class="mt-2 text-center text-red-400 text-sm">{{ playAgainError }}</div>
+      </div>
+
       <!-- Real-World Impact (prominent) -->
       <div class="bg-gradient-to-r from-[#00DC82]/20 to-[#4D8BEC]/20 rounded-2xl p-6 mb-6 border border-white/10">
         <p class="text-white/60 text-sm mb-1 uppercase font-bold">Your Real-World Impact</p>
@@ -124,8 +145,16 @@ definePageMeta({
 const route = useRoute()
 const config = useRuntimeConfig()
 
+// Console ID from query params (passed through from login page)
+const consoleId = computed(() => route.query.console as string || '')
+
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+// Play again state
+const playAgainLoading = ref(false)
+const playAgainSent = ref(false)
+const playAgainError = ref<string | null>(null)
 const userData = ref<any>(null)
 const scores = ref<any[]>([])
 const gameStats = ref<any>({
@@ -290,6 +319,37 @@ async function handleApplePayClick() {
     paymentError.value = e.data?.error || 'Payment failed'
   } finally {
     paymentLoading.value = false
+  }
+}
+
+async function triggerPlayAgain() {
+  if (!consoleId.value || !userData.value) return
+
+  playAgainLoading.value = true
+  playAgainError.value = null
+
+  try {
+    const apiBase = config.public.apiBase || 'http://localhost:3001'
+    const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/start-game`, {
+      method: 'POST',
+      body: { userId: userData.value.id },
+    })
+
+    playAgainSent.value = true
+
+    // Update credits display
+    if (res.creditsRemaining !== undefined) {
+      credits.value.paidCredits = res.creditsRemaining
+      credits.value.availablePlays = res.availablePlays
+    }
+  } catch (e: any) {
+    if (e.data?.needsPayment) {
+      playAgainError.value = 'No credits — add more above!'
+    } else {
+      playAgainError.value = e.data?.error || 'Failed to start game'
+    }
+  } finally {
+    playAgainLoading.value = false
   }
 }
 

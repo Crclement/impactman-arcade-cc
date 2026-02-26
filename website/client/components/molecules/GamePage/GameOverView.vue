@@ -9,12 +9,12 @@
             <MoleculesGamePageScoreView />
           </div>
 
-          <!-- Right side: QR Code -->
+          <!-- Right side -->
           <div class="rounded-xl w-full h-full bg-white p-6 flex flex-col items-center justify-center">
             <!-- Loading state -->
             <div v-if="loading" class="text-center">
               <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#16114F] mx-auto mb-4"></div>
-              <p class="text-[#16114F] font-bold">Generating your code...</p>
+              <p class="text-[#16114F] font-bold">Saving your score...</p>
             </div>
 
             <!-- Error state -->
@@ -25,7 +25,7 @@
               </button>
             </div>
 
-            <!-- Logged-in user: score auto-saved -->
+            <!-- Logged-in user: score auto-saved, waiting for phone -->
             <div v-else-if="gameStore.loggedInUser && scoreSaved" class="text-center w-full">
               <h3 class="text-xl font-bold text-[#16114F] mb-2">Score Saved!</h3>
               <p class="text-gray-600 text-sm mb-4">Nice game, {{ gameStore.loggedInUser.name }}!</p>
@@ -35,12 +35,35 @@
                 <p class="text-[#16114F]/70 text-sm">Level {{ gameStore.global.currentLevel }} &bull; {{ gameStore.global.currentBags }} bags</p>
               </div>
 
-              <button
-                @click="navigateTo(`/dashboard/${gameStore.loggedInUser.id}`)"
-                class="text-[#16114F] underline text-sm font-bold"
-              >
-                View Dashboard
-              </button>
+              <!-- Waiting for phone to trigger replay -->
+              <div v-if="!readyToPlay" class="mt-4">
+                <p class="text-[#16114F]/60 text-sm mb-3">Play again from your phone</p>
+                <div class="flex items-center justify-center gap-2 text-[#16114F]/40">
+                  <div class="w-2 h-2 bg-[#16114F]/30 rounded-full animate-bounce"></div>
+                  <div class="w-2 h-2 bg-[#16114F]/30 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                  <div class="w-2 h-2 bg-[#16114F]/30 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                </div>
+              </div>
+
+              <!-- Ready to play (phone triggered it) -->
+              <div v-else class="mt-4">
+                <button
+                  @click="startGame"
+                  class="button-flash bg-purple text-white px-12 py-4 rounded-xl font-bold text-2xl transition border-4 border-[#16114F] shadow-[0_8px_0_#16114F] active:shadow-none active:translate-y-2"
+                >
+                  Play
+                </button>
+                <p class="text-[#00DC82] text-sm font-bold mt-3">Credit used — press Play!</p>
+              </div>
+
+              <!-- Divider -->
+              <div class="border-t border-gray-200 mt-6 pt-4 w-full">
+                <p class="text-gray-400 text-xs mb-3">New player? Scan to start</p>
+                <div class="bg-white rounded-lg p-2 shadow inline-block">
+                  <img :src="loginQrUrl" alt="Login QR" class="w-20 h-20" />
+                </div>
+                <p class="text-gray-400 text-xs mt-3">Press SPACE for new player</p>
+              </div>
             </div>
 
             <!-- Guest: QR Code display -->
@@ -60,21 +83,8 @@
                 <p class="font-mono text-2xl font-bold text-[#00DC82] mt-1">{{ sessionCode }}</p>
               </div>
 
-              <!-- Console Info (internal) -->
-              <div class="text-xs text-gray-400 mt-4 border-t pt-4">
-                <p>Console: {{ consoleId }} | Raspi: {{ raspiId }}</p>
-                <p class="mt-1">Session: {{ sessionCode }}</p>
-              </div>
+              <p class="text-gray-400 text-xs mt-2">Press SPACE to continue</p>
             </div>
-
-            <!-- Play Again button -->
-            <button
-              @click="PlayAgain"
-              class="mt-6 bg-purple text-white px-12 py-4 rounded-xl font-bold text-2xl hover:bg-[#a855f7] transition border-4 border-[#16114F] shadow-[0_8px_0_#16114F] active:shadow-none active:translate-y-2"
-            >
-              Play Again
-            </button>
-            <p class="text-gray-500 text-sm mt-3">Press SPACE to continue</p>
           </div>
         </div>
       </div>
@@ -96,23 +106,54 @@ const error = ref<string | null>(null)
 const sessionCode = ref<string | null>(null)
 const qrCodeUrl = ref<string>('')
 const scoreSaved = ref(false)
+const readyToPlay = ref(false)
 
-// Console identification (can be set via env or passed from Pi)
+// Console identification
 const consoleId = ref(process.client ? (localStorage.getItem('consoleId') || 'IMP-001') : 'IMP-001')
 const raspiId = ref(process.client ? (localStorage.getItem('raspiId') || 'RPI-001') : 'RPI-001')
 
-// Computed claim URL
+const apiBase = config.public.apiBase || 'http://localhost:3001'
+
+// Login QR for new players
+const loginQrUrl = computed(() => {
+  const baseUrl = process.client ? window.location.origin : ''
+  const loginUrl = `${baseUrl}/login?console=${consoleId.value}&raspi=${raspiId.value}`
+  return `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(loginUrl)}`
+})
+
+// Claim URL for guest sessions
 const claimUrl = computed(() => {
   if (!sessionCode.value) return ''
   const baseUrl = process.client ? window.location.origin : ''
   return `${baseUrl}/claim/${sessionCode.value}`
 })
 
-// Handle keyboard events for arcade cabinet
+// Poll for pending game start from phone
+let pollInterval: ReturnType<typeof setInterval>
+
+const pollForPendingGame = async () => {
+  try {
+    const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
+    if (res.pending) {
+      readyToPlay.value = true
+      clearInterval(pollInterval)
+    }
+  } catch (e) {
+    // Silently ignore
+  }
+}
+
+// Handle keyboard
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.code === 'Space' || e.code === 'Enter') {
     e.preventDefault()
-    PlayAgain()
+    if (readyToPlay.value) {
+      // Phone triggered replay — start the game
+      startGame()
+    } else {
+      // Go back to menu for a new player
+      returnToMenu()
+    }
   }
 }
 
@@ -124,16 +165,17 @@ onMounted(() => {
     createSession()
   }
 
-  // Add keyboard listener for arcade controls
   if (process.client) {
     window.addEventListener('keydown', handleKeydown)
+    // Poll for phone-triggered replay every 2s
+    pollInterval = setInterval(pollForPendingGame, 2000)
   }
 })
 
-// Cleanup
 onUnmounted(() => {
   if (process.client) {
     window.removeEventListener('keydown', handleKeydown)
+    clearInterval(pollInterval)
   }
 })
 
@@ -142,7 +184,6 @@ async function saveScoreForUser() {
   error.value = null
 
   try {
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
     const userId = gameStore.loggedInUser!.id
 
     const res = await $fetch<any>(`${apiBase}/api/users/${userId}/scores`, {
@@ -162,11 +203,9 @@ async function saveScoreForUser() {
     // Update local user data
     if (res.user) {
       gameStore.loggedInUser = res.user
-      localStorage.setItem('impactarcade_user', JSON.stringify(res.user))
     }
   } catch (e: any) {
     console.error('Failed to save score:', e)
-    // Fallback to session flow
     createSession()
   } finally {
     loading.value = false
@@ -178,8 +217,6 @@ async function createSession() {
   error.value = null
 
   try {
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
-
     const res = await $fetch<any>(`${apiBase}/api/sessions`, {
       method: 'POST',
       body: {
@@ -193,11 +230,8 @@ async function createSession() {
     })
 
     sessionCode.value = res.code
-
-    // Generate QR code using Google Charts API (simple, no library needed)
     const qrData = encodeURIComponent(claimUrl.value)
     qrCodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}`
-
   } catch (e: any) {
     console.error('Failed to create session:', e)
     error.value = 'Failed to generate QR code. Please try again.'
@@ -206,17 +240,13 @@ async function createSession() {
   }
 }
 
-const PlayAgain = () => {
-  // Clear logged-in user so next person must scan QR
-  gameStore.clearUser()
-
-  // Clear console login on API
-  const apiBase = config.public.apiBase || 'http://localhost:3001'
-  $fetch(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`, {
+function startGame() {
+  // Clear pending game
+  $fetch(`${apiBase}/api/consoles/${consoleId.value}/pending-game`, {
     method: 'DELETE',
   }).catch(() => {})
 
-  // Reset game state
+  // Reset game state (keep user logged in!)
   gameStore.$patch({
     global: {
       gameScreen: 'menu',
@@ -227,10 +257,35 @@ const PlayAgain = () => {
     }
   })
 
-  // Tell Unity to restart
+  // Start Unity game
   if (gameStore.unityInstance) {
     gameStore.unityInstance.SendMessage("StartManager", "LoadGame")
   }
+
+  // Focus canvas
+  setTimeout(() => {
+    const canvas = document.getElementById('unity-canvas')
+    if (canvas) canvas.focus()
+  }, 100)
+}
+
+function returnToMenu() {
+  // Clear user and go back to menu
+  gameStore.clearUser()
+
+  $fetch(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`, {
+    method: 'DELETE',
+  }).catch(() => {})
+
+  gameStore.$patch({
+    global: {
+      gameScreen: 'menu',
+      currentScore: 0,
+      currentLevel: 1,
+      currentLives: 3,
+      currentBags: 0,
+    }
+  })
 }
 </script>
 
@@ -243,4 +298,13 @@ const PlayAgain = () => {
 
 .bg-purple
   background-color: #9b5de5
+
+.button-flash
+  animation: pulse-glow 1.5s ease-in-out infinite
+
+@keyframes pulse-glow
+  0%, 100%
+    box-shadow: 0px 8px 0px #16114F
+  50%
+    box-shadow: 0px 8px 0px #16114F, 0 0 20px #D9FF69, 0 0 40px #D9FF69
 </style>
