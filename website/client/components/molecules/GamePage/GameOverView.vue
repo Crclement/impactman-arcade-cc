@@ -213,7 +213,6 @@ async function saveScoreForUser() {
       gameStore.loggedInUser = res.user
     }
   } catch (e: any) {
-    console.error('Failed to save score:', e)
     // Enqueue for offline sync
     const token = process.client ? localStorage.getItem('impactarcade_token') : null
     enqueue(`${apiBase}/api/users/${gameStore.loggedInUser!.id}/scores`, 'POST', {
@@ -252,7 +251,6 @@ async function createSession() {
     const qrData = encodeURIComponent(claimUrl.value)
     qrCodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}`
   } catch (e: any) {
-    console.error('Failed to create session:', e)
     // If offline, show a message but don't block the user
     if (!navigator.onLine) {
       error.value = 'You\'re offline. Score will sync when connection returns.'

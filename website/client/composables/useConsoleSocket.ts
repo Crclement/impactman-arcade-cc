@@ -25,7 +25,6 @@ export function useConsoleSocket() {
       connected.value = true
       // Register as this console
       ws!.send(JSON.stringify({ type: 'register', consoleId }))
-      console.log(`[WS] Connected as ${consoleId}`)
     }
 
     ws.onmessage = (event) => {
@@ -53,18 +52,15 @@ export function useConsoleSocket() {
           allListeners.forEach(fn => fn(data))
         }
       } catch (e) {
-        console.error('[WS] Failed to parse message:', e)
       }
     }
 
     ws.onclose = () => {
       connected.value = false
-      console.log('[WS] Disconnected, reconnecting in 3s...')
       reconnectTimer = setTimeout(() => connect(consoleId), 3000)
     }
 
     ws.onerror = (err) => {
-      console.error('[WS] Error:', err)
     }
   }
 

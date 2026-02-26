@@ -59,7 +59,7 @@ export const useGameStore = defineStore('game', {
           try {
             this.loggedInUser = JSON.parse(saved)
           } catch (e) {
-            console.error('Failed to parse saved user:', e)
+            // invalid saved user, ignore
           }
         }
       }
@@ -72,7 +72,6 @@ export const useGameStore = defineStore('game', {
       }
     },
     SendMessage(message: string){
-      console.log('Sending message', message, this.unityInstance)
       this.unityInstance.SendMessage("GameManager", "OnWebMessage", message)
     },
     StartGame(){
