@@ -109,9 +109,20 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
+const APP_VERSION = 'v2.1.0 — QR Unified Dashboard'
+
 // Load user and setup on mount
 onMounted(() => {
   if (process.client) {
+    console.log(
+      `%c 🕹️ IMPACT ARCADE ${APP_VERSION} `,
+      'background: #D9FF69; color: #16114F; font-size: 16px; font-weight: bold; padding: 6px 12px; border-radius: 4px;'
+    )
+    console.log(
+      `%c Console: ${consoleId.value} | ${new Date().toLocaleString()} `,
+      'background: #16114F; color: #D9FF69; font-size: 11px; padding: 3px 8px; border-radius: 2px;'
+    )
+
     store.loadUser()
 
     // Persist console ID to localStorage for other pages
