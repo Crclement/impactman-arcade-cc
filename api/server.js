@@ -682,6 +682,31 @@ app.post('/api/payments/apple-pay', authMiddleware, async (req, res) => {
   }
 });
 
+// Dev: Add a free credit (for testing)
+app.post('/api/users/:id/dev-credit', async (req, res) => {
+  try {
+    const userRow = await db.findUserById(req.params.id);
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const newCredits = await db.addCredit(userRow.id);
+    const credits = await db.getCredits(userRow.id);
+    const availablePlays = credits.freePlayUsed ? credits.credits : credits.credits + 1;
+
+    console.log(`[${new Date().toISOString()}] Dev credit added: ${userRow.email} now has ${newCredits} credits (${availablePlays} plays)`);
+
+    res.json({
+      success: true,
+      credits: newCredits,
+      availablePlays,
+    });
+  } catch (e) {
+    console.error('[API] Error adding dev credit:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 // Use a play credit (called when starting a game)
 app.post('/api/users/:id/use-credit', authMiddleware, async (req, res) => {
   try {

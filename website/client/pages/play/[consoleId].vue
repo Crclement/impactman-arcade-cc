@@ -7,85 +7,151 @@
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col items-center justify-center p-6">
-      <!-- Loading -->
-      <div v-if="loading" class="text-center">
+
+      <!-- LOADING STATE -->
+      <div v-if="state === 'loading'" class="text-center">
         <div class="animate-spin rounded-full h-16 w-16 border-4 border-[#D9FF69] border-t-transparent mx-auto mb-4"></div>
         <p class="text-white/70">Connecting to console...</p>
       </div>
 
-      <!-- Console Not Found -->
-      <div v-else-if="!consoleConnected" class="text-center">
+      <!-- CONSOLE ERROR STATE -->
+      <div v-else-if="state === 'console-error'" class="text-center">
         <div class="text-6xl mb-4">😢</div>
         <h2 class="text-white text-xl font-bold mb-2">Console Not Ready</h2>
         <p class="text-white/60">Please wait for the game to load</p>
-        <button @click="checkConsole" class="mt-6 bg-white/20 text-white px-6 py-3 rounded-xl">
+        <button @click="retryConsole" class="mt-6 bg-white/20 text-white px-6 py-3 rounded-xl">
           Try Again
         </button>
       </div>
 
-      <!-- Game Starting -->
-      <div v-else-if="gameStarting" class="text-center">
-        <div class="text-8xl mb-4 animate-bounce">🎮</div>
-        <h2 class="text-[#D9FF69] text-3xl font-bold mb-2">GO!</h2>
-        <p class="text-white/70">Press PLAY on the arcade!</p>
+      <!-- LOGIN STATE (inline, dark-themed) -->
+      <div v-else-if="state === 'login'" class="text-center w-full max-w-sm">
+        <h2 class="text-white text-2xl font-bold mb-1">Scan. Login. Play.</h2>
+        <p class="text-[#D9FF69] text-lg font-bold mb-6">First game is FREE!</p>
+
+        <form @submit.prevent="handleLogin" class="space-y-3">
+          <input
+            v-model="loginEmail"
+            type="email"
+            required
+            placeholder="your@email.com"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40 focus:border-[#D9FF69] focus:outline-none"
+          />
+          <input
+            v-model="loginName"
+            type="text"
+            placeholder="Name (optional)"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40 focus:border-[#D9FF69] focus:outline-none"
+          />
+
+          <p v-if="loginError" class="text-red-400 text-sm">{{ loginError }}</p>
+
+          <button
+            type="submit"
+            :disabled="loginLoading"
+            class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition disabled:opacity-50"
+          >
+            {{ loginLoading ? 'Logging in...' : 'Login / Sign Up' }}
+          </button>
+        </form>
+
+        <p class="text-white/30 text-xs mt-4">We'll create an account if you don't have one yet.</p>
       </div>
 
-      <!-- Ready to Play -->
-      <div v-else class="text-center w-full max-w-sm">
-        <!-- Returning User -->
-        <div v-if="user" class="mb-6">
-          <div class="text-5xl mb-2">👋</div>
-          <h2 class="text-white text-xl font-bold">Welcome back, {{ user.name }}!</h2>
-          <p class="text-white/60 text-sm">{{ credits.availablePlays }} plays available</p>
-        </div>
+      <!-- DASHBOARD STATE (the arcade controller) -->
+      <div v-else-if="state === 'dashboard'" class="w-full max-w-sm">
+        <!-- User greeting -->
+        <p class="text-white/60 text-sm text-center mb-4">Hey, <span class="text-white font-bold">{{ user?.name }}</span></p>
 
-        <!-- Guest User -->
-        <div v-else class="mb-6">
-          <div class="text-5xl mb-2">🎮</div>
-          <h2 class="text-white text-2xl font-bold">Ready to Play?</h2>
-          <p class="text-[#D9FF69] text-lg font-bold mt-1">First game is FREE!</p>
-        </div>
-
-        <!-- Play Button (Guest or Has Credits) -->
-        <button
-          v-if="!user || credits.availablePlays > 0"
-          @click="startGame"
-          :disabled="starting"
-          class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] text-2xl font-bold py-6 rounded-2xl shadow-lg transform active:scale-95 transition disabled:opacity-50"
-        >
-          {{ starting ? 'Starting...' : (user ? 'PLAY' : 'PLAY FREE') }}
-        </button>
-
-        <!-- Need to Pay -->
-        <div v-else class="space-y-4">
-          <p class="text-white/70">Add a play credit to continue</p>
-
-          <!-- Apple Pay Button -->
-          <div v-if="applePaySupported" id="apple-pay-button" class="w-full"></div>
-
-          <!-- Fallback -->
-          <div v-else class="bg-white/10 rounded-xl p-4 text-center">
-            <p class="text-white/60 text-sm">Apple Pay not available</p>
+        <!-- Credit pill -->
+        <div class="bg-gradient-to-r from-[#D9FF69] to-[#00DC82] rounded-2xl p-5 mb-5">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-5xl font-bold text-[#16114F]">{{ credits.availablePlays }}</div>
+              <div class="text-[#16114F]/70 font-bold text-sm uppercase">Play Credits</div>
+            </div>
+            <div class="text-right">
+              <div v-if="!credits.freePlayUsed" class="text-[#16114F] font-bold text-sm">First play FREE!</div>
+              <div v-else class="text-[#16114F]/60 text-sm">{{ credits.paidCredits }} paid</div>
+            </div>
           </div>
         </div>
 
-        <!-- Error -->
-        <p v-if="error" class="mt-4 text-red-400 text-sm">{{ error }}</p>
+        <!-- PLAY button (when credits available) -->
+        <button
+          v-if="credits.availablePlays > 0"
+          @click="startGame"
+          :disabled="starting"
+          :class="[
+            'w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl transition border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5 mb-5',
+            credits.availablePlays > 0 && !starting ? 'button-flash' : ''
+          ]"
+        >
+          {{ starting ? 'Starting...' : 'PLAY' }}
+        </button>
 
-        <!-- Sign in prompt for guests after play -->
-        <div v-if="!user && showSignInPrompt" class="mt-8 bg-white/10 rounded-xl p-4">
-          <p class="text-white/80 text-sm mb-3">Save your scores?</p>
-          <button
-            @click="signInWithApple"
-            class="w-full bg-black text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2"
-          >
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-            </svg>
-            Sign in with Apple
-          </button>
+        <!-- No credits state -->
+        <div v-else class="mb-5 space-y-3">
+          <div class="bg-white/10 rounded-2xl p-4 text-center">
+            <p class="text-white/60 font-bold">No credits remaining</p>
+            <p class="text-white/40 text-sm mt-1">Add a credit to play</p>
+          </div>
+
+          <!-- Apple Pay -->
+          <div v-if="paymentLoading" class="flex justify-center py-3">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D9FF69]"></div>
+          </div>
+          <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container"></div>
+          <p v-else class="text-white/40 text-sm text-center">Apple Pay not available on this device</p>
+          <div v-if="paymentError" class="text-center text-red-400 text-sm">{{ paymentError }}</div>
+          <div v-if="paymentSuccess" class="text-center text-[#D9FF69] font-bold">Credit added!</div>
         </div>
+
+        <!-- Error from start-game -->
+        <p v-if="gameError" class="text-red-400 text-sm text-center mb-4">{{ gameError }}</p>
+
+        <!-- Compact stats grid -->
+        <div class="grid grid-cols-3 gap-3 mb-5">
+          <div class="bg-white/10 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-white">{{ gameStats.highScore?.toLocaleString() || 0 }}</div>
+            <div class="text-[10px] text-white/50 uppercase">High Score</div>
+          </div>
+          <div class="bg-white/10 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-[#D9FF69]">{{ gameStats.gamesPlayed || 0 }}</div>
+            <div class="text-[10px] text-white/50 uppercase">Games</div>
+          </div>
+          <div class="bg-white/10 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-[#00DC82]">L{{ gameStats.bestLevel || 1 }}</div>
+            <div class="text-[10px] text-white/50 uppercase">Best Level</div>
+          </div>
+        </div>
+
+        <!-- Dev: Add Credit -->
+        <button
+          @click="devAddCredit"
+          :disabled="devCreditLoading"
+          class="w-full border-2 border-dashed border-white/20 text-white/40 py-3 rounded-xl text-sm transition hover:border-white/40 hover:text-white/60 disabled:opacity-50 mb-4"
+        >
+          {{ devCreditLoading ? 'Adding...' : 'Dev: Add Credit' }}
+        </button>
+
+        <!-- Sign out -->
+        <button @click="signOut" class="w-full text-white/30 text-xs py-2 hover:text-white/50 transition">
+          Sign out
+        </button>
       </div>
+
+      <!-- GAME STARTING STATE -->
+      <div v-else-if="state === 'game-starting'" class="text-center">
+        <div class="text-8xl mb-4 animate-bounce">🎮</div>
+        <h2 class="text-[#D9FF69] text-3xl font-bold mb-2">GO!</h2>
+        <p class="text-white/70 mb-4">Press PLAY on the arcade!</p>
+        <p class="text-white/40 text-sm mb-6">{{ credits.availablePlays }} credit{{ credits.availablePlays === 1 ? '' : 's' }} remaining</p>
+        <button @click="backToDashboard" class="text-white/50 text-sm underline hover:text-white/70 transition">
+          Back to dashboard
+        </button>
+      </div>
+
     </div>
 
     <!-- Footer -->
@@ -103,24 +169,49 @@ const config = useRuntimeConfig()
 
 const consoleId = computed(() => route.params.consoleId as string)
 
-const loading = ref(true)
-const consoleConnected = ref(false)
-const gameStarting = ref(false)
-const starting = ref(false)
-const error = ref<string | null>(null)
-const showSignInPrompt = ref(false)
+// State machine
+const state = ref<'loading' | 'console-error' | 'login' | 'dashboard' | 'game-starting'>('loading')
 
+// User + auth
 const user = ref<any>(null)
-const credits = ref({ availablePlays: 1, freePlayUsed: false })
-const applePaySupported = ref(false)
 
-// Get API base - use tunnel URL if available
+// Login form
+const loginEmail = ref('')
+const loginName = ref('')
+const loginLoading = ref(false)
+const loginError = ref<string | null>(null)
+
+// Dashboard data
+const credits = ref({ freePlayUsed: false, paidCredits: 0, availablePlays: 1 })
+const gameStats = ref<any>({ highScore: 0, gamesPlayed: 0, bestLevel: 1 })
+
+// Game start
+const starting = ref(false)
+const gameError = ref<string | null>(null)
+
+// Apple Pay
+const applePaySupported = ref(false)
+const paymentLoading = ref(false)
+const paymentError = ref<string | null>(null)
+const paymentSuccess = ref(false)
+const squarePayments = ref<any>(null)
+const applePay = ref<any>(null)
+
+// Dev credit
+const devCreditLoading = ref(false)
+
+// API base
 const apiBase = computed(() => {
   if (process.client && window.location.hostname.includes('trycloudflare.com')) {
     return 'https://heavy-random-exhibits-alto.trycloudflare.com'
   }
   return config.public.apiBase || 'http://localhost:3001'
 })
+
+function getAuthHeaders() {
+  const token = process.client ? localStorage.getItem('impactarcade_token') : null
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 onMounted(async () => {
   // Check for saved user
@@ -129,30 +220,102 @@ onMounted(async () => {
     if (savedUser) {
       try {
         user.value = JSON.parse(savedUser)
-        // Fetch credits
-        await fetchCredits()
       } catch (e) {
         localStorage.removeItem('impactarcade_user')
       }
     }
   }
 
-  await checkConsole()
-  loading.value = false
+  // Check console connectivity
+  const connected = await checkConsole()
+  if (!connected) {
+    state.value = 'console-error'
+    return
+  }
 
-  // Setup Apple Pay if needed
-  if (user.value && credits.value.availablePlays === 0) {
-    await setupApplePay()
+  // Route to login or dashboard
+  if (user.value) {
+    await loadDashboardData()
+    state.value = 'dashboard'
+    if (process.client) await initializeApplePay()
+  } else {
+    state.value = 'login'
   }
 })
 
-async function checkConsole() {
+// ── Console check ──
+
+async function checkConsole(): Promise<boolean> {
   try {
     const res = await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/status`)
-    consoleConnected.value = res.connected
+    return res.connected
   } catch (e) {
-    consoleConnected.value = false
+    return false
   }
+}
+
+async function retryConsole() {
+  state.value = 'loading'
+  const connected = await checkConsole()
+  if (connected) {
+    if (user.value) {
+      await loadDashboardData()
+      state.value = 'dashboard'
+    } else {
+      state.value = 'login'
+    }
+  } else {
+    state.value = 'console-error'
+  }
+}
+
+// ── Login ──
+
+async function handleLogin() {
+  loginLoading.value = true
+  loginError.value = null
+
+  try {
+    const res = await $fetch<any>(`${apiBase.value}/api/users/login`, {
+      method: 'POST',
+      body: {
+        email: loginEmail.value,
+        name: loginName.value || undefined,
+      },
+    })
+
+    user.value = res.user
+    if (process.client) {
+      localStorage.setItem('impactarcade_token', res.token)
+      localStorage.setItem('impactarcade_user', JSON.stringify(res.user))
+    }
+
+    // Notify console
+    try {
+      await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/login`, {
+        method: 'POST',
+        body: { userId: res.user.id },
+      })
+    } catch (e) {
+      // Non-critical
+    }
+
+    // Fetch dashboard data then transition
+    await loadDashboardData()
+    state.value = 'dashboard'
+    if (process.client) await initializeApplePay()
+  } catch (e: any) {
+    loginError.value = e.data?.error || 'Failed to login. Please try again.'
+  } finally {
+    loginLoading.value = false
+  }
+}
+
+// ── Dashboard data ──
+
+async function loadDashboardData() {
+  if (!user.value) return
+  await Promise.all([fetchCredits(), fetchScores()])
 }
 
 async function fetchCredits() {
@@ -165,87 +328,225 @@ async function fetchCredits() {
   }
 }
 
-async function startGame() {
-  starting.value = true
-  error.value = null
-
+async function fetchScores() {
+  if (!user.value) return
   try {
-    if (user.value) {
-      // Logged in user - use credits system
-      const res = await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/start-game`, {
-        method: 'POST',
-        body: { userId: user.value.id },
-      })
-
-      if (res.success) {
-        gameStarting.value = true
-        credits.value.availablePlays = res.availablePlays
-      }
-    } else {
-      // Guest user - start as guest
-      const res = await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/start-guest`, {
-        method: 'POST',
-      })
-
-      if (res.success) {
-        gameStarting.value = true
-        // Store guest session ID for later score claiming
-        if (process.client) {
-          localStorage.setItem('impactarcade_guest_session', res.guestSessionId)
-        }
-        // Show sign in prompt after a delay
-        setTimeout(() => {
-          showSignInPrompt.value = true
-        }, 3000)
+    const res = await $fetch<any>(`${apiBase.value}/api/users/${user.value.id}/scores`)
+    if (res.scores && res.scores.length > 0) {
+      gameStats.value = {
+        highScore: Math.max(...res.scores.map((s: any) => s.score || 0)),
+        gamesPlayed: res.scores.length,
+        bestLevel: Math.max(...res.scores.map((s: any) => s.level || 1)),
       }
     }
+  } catch (e) {
+    console.error('Failed to fetch scores:', e)
+  }
+}
+
+// ── Start game ──
+
+async function startGame() {
+  starting.value = true
+  gameError.value = null
+
+  try {
+    const res = await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/start-game`, {
+      method: 'POST',
+      body: { userId: user.value.id },
+    })
+
+    if (res.success) {
+      credits.value.availablePlays = res.availablePlays
+      if (res.creditsRemaining !== undefined) {
+        credits.value.paidCredits = res.creditsRemaining
+      }
+      state.value = 'game-starting'
+    }
   } catch (e: any) {
-    error.value = e.data?.error || 'Failed to start game'
+    gameError.value = e.data?.error || 'Failed to start game'
     if (e.data?.needsPayment) {
-      await setupApplePay()
+      // Refresh credits
+      await fetchCredits()
     }
   } finally {
     starting.value = false
   }
 }
 
-async function setupApplePay() {
-  // Check if Apple Pay is available
-  if (process.client && (window as any).ApplePaySession?.canMakePayments()) {
-    applePaySupported.value = true
-    // Setup Apple Pay button would go here
+async function backToDashboard() {
+  state.value = 'loading'
+  await loadDashboardData()
+  state.value = 'dashboard'
+  if (process.client) {
+    await nextTick()
+    await initializeApplePay()
   }
 }
 
-async function signInWithApple() {
-  // Apple Sign In implementation
-  // For now, fallback to email modal
-  const email = prompt('Enter your email to save scores:')
-  if (email) {
-    try {
-      const res = await $fetch<any>(`${apiBase.value}/api/users/login`, {
+// ── Apple Pay ──
+
+async function initializeApplePay() {
+  try {
+    const paymentConfig = await $fetch<any>(`${apiBase.value}/api/payments/config`)
+
+    if (!paymentConfig.applicationId) {
+      console.log('Square not configured')
+      return
+    }
+
+    if (!(window as any).Square) {
+      const script = document.createElement('script')
+      script.src = paymentConfig.environment === 'production'
+        ? 'https://web.squarecdn.com/v1/square.js'
+        : 'https://sandbox.web.squarecdn.com/v1/square.js'
+      script.onload = () => setupApplePay(paymentConfig)
+      document.head.appendChild(script)
+    } else {
+      await setupApplePay(paymentConfig)
+    }
+  } catch (e) {
+    console.error('Failed to initialize Apple Pay:', e)
+  }
+}
+
+async function setupApplePay(paymentConfig: any) {
+  try {
+    const payments = (window as any).Square.payments(
+      paymentConfig.applicationId,
+      paymentConfig.locationId
+    )
+    squarePayments.value = payments
+
+    const applePayInstance = await payments.applePay({
+      countryCode: 'US',
+      currencyCode: 'USD',
+      total: {
+        amount: '1.00',
+        label: 'Impact Arcade Play Credit',
+      },
+    })
+
+    if (applePayInstance) {
+      applePay.value = applePayInstance
+      applePaySupported.value = true
+
+      await nextTick()
+      const container = document.getElementById('apple-pay-button')
+      if (container) {
+        container.innerHTML = ''
+        const button = document.createElement('div')
+        button.className = 'apple-pay-button apple-pay-button-black'
+        button.style.cssText = 'width: 100%; height: 48px; cursor: pointer; border-radius: 8px;'
+        button.onclick = handleApplePayClick
+        container.appendChild(button)
+      }
+    }
+  } catch (e) {
+    console.log('Apple Pay not available:', e)
+    applePaySupported.value = false
+  }
+}
+
+async function handleApplePayClick() {
+  if (!applePay.value || !user.value) return
+
+  paymentLoading.value = true
+  paymentError.value = null
+  paymentSuccess.value = false
+
+  try {
+    const tokenResult = await applePay.value.tokenize()
+
+    if (tokenResult.status === 'OK') {
+      const result = await $fetch<any>(`${apiBase.value}/api/payments/apple-pay`, {
         method: 'POST',
-        body: { email, name: email.split('@')[0] },
+        headers: getAuthHeaders(),
+        body: {
+          userId: user.value.id,
+          sourceId: tokenResult.token,
+        },
       })
 
-      user.value = res.user
-      if (process.client) {
-        localStorage.setItem('impactarcade_user', JSON.stringify(res.user))
-        localStorage.setItem('impactarcade_token', res.token)
-      }
+      if (result.success) {
+        paymentSuccess.value = true
+        credits.value.paidCredits = result.credits
+        credits.value.availablePlays = result.availablePlays
 
-      // Claim any guest session
-      const guestSession = localStorage.getItem('impactarcade_guest_session')
-      if (guestSession) {
-        // TODO: Claim guest session scores
-        localStorage.removeItem('impactarcade_guest_session')
+        setTimeout(() => {
+          paymentSuccess.value = false
+        }, 3000)
+      } else {
+        paymentError.value = result.error || 'Payment failed'
       }
-
-      showSignInPrompt.value = false
-      await fetchCredits()
-    } catch (e: any) {
-      error.value = e.data?.error || 'Failed to sign in'
+    } else {
+      paymentError.value = tokenResult.errors?.[0]?.message || 'Payment cancelled'
     }
+  } catch (e: any) {
+    console.error('Apple Pay error:', e)
+    paymentError.value = e.data?.error || 'Payment failed'
+  } finally {
+    paymentLoading.value = false
   }
 }
+
+// ── Dev credit ──
+
+async function devAddCredit() {
+  if (!user.value) return
+  devCreditLoading.value = true
+
+  try {
+    const res = await $fetch<any>(`${apiBase.value}/api/users/${user.value.id}/dev-credit`, {
+      method: 'POST',
+    })
+
+    if (res.success) {
+      credits.value.paidCredits = res.credits
+      credits.value.availablePlays = res.availablePlays
+    }
+  } catch (e: any) {
+    console.error('Dev credit error:', e)
+  } finally {
+    devCreditLoading.value = false
+  }
+}
+
+// ── Sign out ──
+
+function signOut() {
+  if (process.client) {
+    localStorage.removeItem('impactarcade_user')
+    localStorage.removeItem('impactarcade_token')
+  }
+  user.value = null
+  credits.value = { freePlayUsed: false, paidCredits: 0, availablePlays: 1 }
+  gameStats.value = { highScore: 0, gamesPlayed: 0, bestLevel: 1 }
+  state.value = 'login'
+}
 </script>
+
+<style scoped>
+.button-flash {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0px 6px 0px #16114F;
+  }
+  50% {
+    box-shadow: 0px 6px 0px #16114F, 0 0 20px #D9FF69, 0 0 40px #D9FF69;
+  }
+}
+
+.apple-pay-button {
+  -webkit-appearance: -apple-pay-button;
+  -apple-pay-button-type: buy;
+  -apple-pay-button-style: black;
+}
+
+.apple-pay-button-container {
+  min-height: 48px;
+}
+</style>
