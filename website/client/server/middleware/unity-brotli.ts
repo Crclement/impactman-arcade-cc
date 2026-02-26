@@ -1,4 +1,4 @@
-import { defineEventHandler, getRequestURL, setResponseHeaders } from 'h3'
+import { defineEventHandler, setResponseHeader } from 'h3'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -21,8 +21,7 @@ const UNITY_FILES: Record<string, { brFile: string; contentType: string }> = {
 }
 
 export default defineEventHandler((event) => {
-  const url = getRequestURL(event)
-  const pathname = url.pathname
+  const pathname = event.node.req.url?.split('?')[0] || ''
 
   const entry = UNITY_FILES[pathname]
   if (!entry) return // Not a Unity file — let Nitro handle normally
@@ -40,11 +39,9 @@ export default defineEventHandler((event) => {
     }
   }
 
-  setResponseHeaders(event, {
-    'Content-Encoding': 'br',
-    'Content-Type': entry.contentType,
-    'Cache-Control': 'public, max-age=31536000, immutable',
-  })
+  setResponseHeader(event, 'Content-Encoding', 'br')
+  setResponseHeader(event, 'Content-Type', entry.contentType)
+  setResponseHeader(event, 'Cache-Control', 'public, max-age=31536000, immutable')
 
   return data
 })
