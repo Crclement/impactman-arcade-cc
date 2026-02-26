@@ -77,7 +77,7 @@
           <div class="flex items-center justify-between">
             <div>
               <div class="text-5xl font-bold text-[#16114F]">{{ credits.availablePlays }}</div>
-              <div class="text-[#16114F]/70 font-bold text-sm uppercase">Play Credits</div>
+              <div class="text-[#16114F]/70 font-bold text-sm uppercase">Play Tokens</div>
             </div>
             <div class="text-right">
               <div v-if="!credits.freePlayUsed" class="text-[#16114F] font-bold text-sm">First play FREE!</div>
@@ -88,7 +88,7 @@
 
         <!-- Credit used success (inline) -->
         <div v-if="creditUsed" class="bg-[#00DC82]/20 border border-[#00DC82]/40 rounded-2xl p-4 text-center mb-5">
-          <p class="text-[#00DC82] font-bold text-lg">Credit Used!</p>
+          <p class="text-[#00DC82] font-bold text-lg">Token Used!</p>
           <p class="text-white font-bold text-sm mt-1">The Play button is now flashing</p>
           <p class="text-white/50 text-sm mt-1">Press PLAY on the arcade to start!</p>
         </div>
@@ -103,7 +103,7 @@
               !starting ? 'button-flash' : ''
             ]"
           >
-            {{ starting ? 'Starting...' : 'Use Credit' }}
+            {{ starting ? 'Starting...' : 'Use Token' }}
           </button>
           <p class="text-white/40 text-xs text-center mb-5">
             This will activate the Play button on the arcade
@@ -112,8 +112,8 @@
 
         <!-- No credits message -->
         <div v-else class="bg-white/10 rounded-2xl p-4 text-center mb-5">
-          <p class="text-white/60 font-bold">No credits remaining</p>
-          <p class="text-white/40 text-sm mt-1">Add a credit below to play</p>
+          <p class="text-white/60 font-bold">No tokens remaining</p>
+          <p class="text-white/40 text-sm mt-1">Add a token below to play</p>
         </div>
 
         <!-- Error from start-game -->
@@ -121,7 +121,7 @@
 
         <!-- Add Credits section (always visible) -->
         <div class="bg-white/5 rounded-2xl p-4 mb-5 border border-white/10">
-          <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Credits</p>
+          <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Tokens</p>
 
           <!-- Apple Pay -->
           <div v-if="paymentLoading" class="flex justify-center py-3">
@@ -136,12 +136,12 @@
             class="w-full border-2 border-dashed border-white/20 text-white/40 py-3 rounded-xl text-sm transition hover:border-white/40 hover:text-white/60 disabled:opacity-50"
             :class="{ 'mt-3': applePaySupported }"
           >
-            {{ devCreditLoading ? 'Adding...' : 'Dev: Add Credit' }}
+            {{ devCreditLoading ? 'Adding...' : 'Dev: Add Token' }}
           </button>
 
           <div v-if="paymentError" class="text-center text-red-400 text-sm mt-2">{{ paymentError }}</div>
-          <div v-if="paymentSuccess" class="text-center text-[#D9FF69] font-bold mt-2">Credit added!</div>
-          <div v-if="devCreditSuccess" class="text-center text-[#D9FF69] font-bold mt-2">Dev credit added!</div>
+          <div v-if="paymentSuccess" class="text-center text-[#D9FF69] font-bold mt-2">Token added!</div>
+          <div v-if="devCreditSuccess" class="text-center text-[#D9FF69] font-bold mt-2">Dev token added!</div>
         </div>
 
         <!-- Compact stats grid -->
@@ -498,7 +498,7 @@ async function setupApplePay(paymentConfig: any) {
       currencyCode: 'USD',
       total: {
         amount: '1.00',
-        label: 'Impact Arcade Play Credit',
+        label: 'Impact Arcade Play Token',
       },
     })
 

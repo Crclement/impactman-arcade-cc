@@ -38,7 +38,7 @@
 
               <!-- Waiting for phone to trigger replay -->
               <div v-if="!readyToPlay" class="mt-4">
-                <p class="text-[#16114F]/60 text-sm mb-3">Play again from your phone</p>
+                <p class="text-[#16114F]/60 text-sm mb-3">Use a token on your phone to play again</p>
                 <div class="flex items-center justify-center gap-2 text-[#16114F]/40">
                   <div class="w-2 h-2 bg-[#16114F]/30 rounded-full animate-bounce"></div>
                   <div class="w-2 h-2 bg-[#16114F]/30 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
@@ -54,7 +54,7 @@
                 >
                   Play
                 </button>
-                <p class="text-[#00DC82] text-sm font-bold mt-3">Credit used — press Play!</p>
+                <p class="text-[#00DC82] text-sm font-bold mt-3">Token used — press Play!</p>
               </div>
 
               <!-- Divider -->

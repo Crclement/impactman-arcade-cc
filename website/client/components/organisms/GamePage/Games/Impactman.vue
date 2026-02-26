@@ -25,35 +25,57 @@
     <div v-if="store.global.gameScreen === 'menu'"
       class="absolute left-1/2 -translate-x-1/2 bottom-8 flex flex-col items-center">
 
-      <!-- Logged-in user greeting -->
-      <div v-if="store.loggedInUser" class="logged-in-badge bg-[#D9FF69] rounded-lg px-5 py-2 mb-3 shadow-lg text-center border-2 border-[#16114F]">
-        <p class="text-[#16114F] font-bold text-sm">{{ store.loggedInUser.name }}</p>
-        <p v-if="store.readyToPlay" class="text-[#16114F]/80 text-xs font-bold">PRESS PLAY!</p>
-        <p v-else class="text-[#16114F]/60 text-xs">Use a credit on your phone to play</p>
-      </div>
+      <!-- STATE A: No user logged in — big QR -->
+      <template v-if="!store.loggedInUser">
+        <div class="flex flex-col items-center">
+          <div class="bg-white/95 rounded-xl p-3 shadow-lg">
+            <img :src="loginQrUrl" alt="Scan to Play" class="w-32 h-32 rounded" />
+          </div>
+          <p class="font-retro text-[#D9FF69] text-2xl mt-3 tracking-wide">SCAN TO PLAY</p>
+          <p class="text-white/50 text-xs mt-1">Scan with your phone camera</p>
+        </div>
+      </template>
 
-      <!-- Play button + QR code -->
-      <div class="flex items-center gap-4">
-        <!-- Play button: only active when readyToPlay -->
+      <!-- STATE B: User logged in, no token used yet -->
+      <template v-else-if="!store.readyToPlay">
+        <div class="logged-in-badge bg-[#D9FF69] rounded-lg px-5 py-2 mb-3 shadow-lg text-center border-2 border-[#16114F]">
+          <p class="text-[#16114F] font-bold text-sm">Welcome back, {{ store.loggedInUser.name }}!</p>
+        </div>
+
+        <div class="flex items-center gap-3 mb-3">
+          <p class="retro-blink font-retro text-lg tracking-wide">ADD TOKENS</p>
+          <div class="bg-white/95 rounded-lg p-1.5 shadow-lg">
+            <img :src="loginQrUrl" alt="Add Tokens QR" class="w-12 h-12 rounded" />
+          </div>
+        </div>
+
         <button
-          v-if="store.readyToPlay"
+          disabled
+          class="button-play font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-[#4A4580] text-center rounded-xl">
+          <span class="text-play">Play</span>
+        </button>
+      </template>
+
+      <!-- STATE C: User logged in, ready to play -->
+      <template v-else>
+        <div class="logged-in-badge bg-[#D9FF69] rounded-lg px-5 py-2 mb-3 shadow-lg text-center border-2 border-[#16114F]">
+          <p class="text-[#16114F] font-bold text-sm">Welcome back, {{ store.loggedInUser.name }}!</p>
+          <p class="text-[#16114F]/80 text-xs font-bold">PRESS PLAY!</p>
+        </div>
+
+        <button
           @click="() => store.StartGame()"
           class="button-play button-flash font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
           <span class="text-play">Play</span>
         </button>
-        <button
-          v-else
-          disabled
-          class="button-play font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple/40 text-center rounded-xl opacity-50 cursor-not-allowed">
-          <span class="text-play">Play</span>
-        </button>
 
-        <!-- QR Code always visible — scan to login or switch user -->
-        <div class="bg-white/95 rounded-lg p-2 shadow-lg text-center">
-          <img :src="loginQrUrl" alt="Login QR" class="w-16 h-16 rounded" />
-          <p v-if="store.loggedInUser" class="text-[8px] text-gray-500 mt-1">Not you?<br>Scan here</p>
+        <div class="flex items-center gap-2 mt-3">
+          <div class="bg-white/95 rounded-lg p-1.5 shadow-lg text-center">
+            <img :src="loginQrUrl" alt="Switch user QR" class="w-10 h-10 rounded" />
+          </div>
+          <p class="text-white/40 text-[10px]">Not you?<br>Scan here</p>
         </div>
-      </div>
+      </template>
 
       <div class="text-[#FCF252] text-center font-bold whitespace-nowrap mt-4 text-sm">
         WARNING: THIS GAME REMOVES REAL-WORLD OCEAN PLASTIC!
@@ -105,7 +127,7 @@ const focusCanvas = () => {
 
 // Handle keyboard events for arcade cabinet
 const handleKeydown = (e: KeyboardEvent) => {
-  // Spacebar or Enter to start game — only when a credit has been used
+  // Spacebar or Enter to start game — only when a token has been used
   if ((e.code === 'Space' || e.code === 'Enter') && store.global.gameScreen === 'menu' && store.readyToPlay) {
     e.preventDefault()
     store.StartGame()
@@ -132,7 +154,9 @@ onMounted(() => {
       'background: #16114F; color: #D9FF69; font-size: 11px; padding: 3px 8px; border-radius: 2px;'
     )
 
-    store.loadUser()
+    // Clear any stale user from localStorage — arcade starts fresh on every load.
+    // The login poll + WebSocket will pick up the active user from the API.
+    store.clearUser()
 
     // Persist console ID to localStorage for other pages
     localStorage.setItem('consoleId', consoleId.value)
@@ -250,5 +274,15 @@ watch(() => store.sound, (soundOn) => {
   to
     opacity: 1
     transform: translateY(0)
+
+.retro-blink
+  animation: retro-blink 0.8s steps(1) infinite
+  text-shadow: 0 0 8px rgba(217, 255, 105, 0.6)
+
+@keyframes retro-blink
+  0%, 100%
+    color: #D9FF69
+  50%
+    color: #FFFFFF
 </style>
 

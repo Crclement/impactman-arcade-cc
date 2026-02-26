@@ -26,7 +26,7 @@
         <div class="flex items-center justify-between">
           <div>
             <div class="text-5xl font-bold text-[#16114F]">{{ credits.availablePlays }}</div>
-            <div class="text-[#16114F]/70 font-bold text-sm uppercase">Play Credits</div>
+            <div class="text-[#16114F]/70 font-bold text-sm uppercase">Play Tokens</div>
           </div>
           <div class="text-right">
             <div v-if="!credits.freePlayUsed" class="text-[#16114F] font-bold text-sm">First play FREE!</div>
@@ -43,26 +43,26 @@
           :disabled="playAgainLoading"
           class="w-full bg-[#9b5de5] text-white py-5 rounded-2xl font-bold text-2xl hover:bg-[#a855f7] transition disabled:opacity-50 border-4 border-[#16114F] shadow-[0_6px_0_#16114F] active:shadow-none active:translate-y-1.5"
         >
-          {{ playAgainLoading ? 'Sending...' : 'Use Credit' }}
+          {{ playAgainLoading ? 'Sending...' : 'Use Token' }}
         </button>
         <p v-if="credits.availablePlays > 0 && !playAgainSent" class="text-white/40 text-xs text-center mt-2">
           This will activate the Play button on the arcade
         </p>
         <div v-else-if="playAgainSent" class="bg-[#00DC82]/20 border border-[#00DC82]/40 rounded-2xl p-4 text-center">
-          <p class="text-[#00DC82] font-bold text-lg">Credit Used!</p>
+          <p class="text-[#00DC82] font-bold text-lg">Token Used!</p>
           <p class="text-white font-bold text-sm mt-1">The Play button is now flashing</p>
           <p class="text-white/50 text-sm mt-1">Press PLAY on the arcade to start!</p>
         </div>
         <div v-else class="bg-white/10 rounded-2xl p-4 text-center">
-          <p class="text-white/60 font-bold">No credits remaining</p>
-          <p class="text-white/40 text-sm mt-1">Add a credit below to play</p>
+          <p class="text-white/60 font-bold">No tokens remaining</p>
+          <p class="text-white/40 text-sm mt-1">Add a token below to play</p>
         </div>
         <div v-if="playAgainError" class="mt-2 text-center text-red-400 text-sm">{{ playAgainError }}</div>
       </div>
 
       <!-- Add Credits section (always visible) -->
       <div class="bg-white/5 rounded-2xl p-5 mb-6 border border-white/10">
-        <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Credits</p>
+        <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Tokens</p>
 
         <div v-if="paymentLoading" class="flex justify-center py-3">
           <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D9FF69]"></div>
@@ -76,12 +76,12 @@
           class="w-full border-2 border-dashed border-white/20 text-white/40 py-3 rounded-xl text-sm transition hover:border-white/40 hover:text-white/60 disabled:opacity-50"
           :class="{ 'mt-3': applePaySupported }"
         >
-          {{ devCreditLoading ? 'Adding...' : 'Dev: Add Credit' }}
+          {{ devCreditLoading ? 'Adding...' : 'Dev: Add Token' }}
         </button>
 
         <div v-if="paymentError" class="mt-2 text-center text-red-400 text-sm font-bold">{{ paymentError }}</div>
-        <div v-if="paymentSuccess" class="mt-2 text-center text-[#D9FF69] font-bold">Credit added!</div>
-        <div v-if="devCreditSuccess" class="mt-2 text-center text-[#D9FF69] font-bold">Dev credit added!</div>
+        <div v-if="paymentSuccess" class="mt-2 text-center text-[#D9FF69] font-bold">Token added!</div>
+        <div v-if="devCreditSuccess" class="mt-2 text-center text-[#D9FF69] font-bold">Dev token added!</div>
       </div>
 
       <!-- Real-World Impact (prominent) -->
@@ -269,7 +269,7 @@ async function setupApplePay(paymentConfig: any) {
       currencyCode: 'USD',
       total: {
         amount: '1.00',
-        label: 'Impact Arcade Play Credit',
+        label: 'Impact Arcade Play Token',
       },
     })
 
@@ -358,7 +358,7 @@ async function triggerPlayAgain() {
     }
   } catch (e: any) {
     if (e.data?.needsPayment) {
-      playAgainError.value = 'No credits — add more above!'
+      playAgainError.value = 'No tokens — add more above!'
     } else {
       playAgainError.value = e.data?.error || 'Failed to start game'
     }
