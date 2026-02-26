@@ -94,11 +94,13 @@
 
 <script lang="ts" setup>
 import { useGameStore } from '~~/store/game';
+import { useConsoleSocket } from '~~/composables/useConsoleSocket';
 import NicePage from './NicePage.vue';
 
 const config = useRuntimeConfig()
 const show = ref(true)
 const gameStore = useGameStore()
+const { on, send } = useConsoleSocket()
 
 // Session state
 const loading = ref(true)
@@ -128,30 +130,13 @@ const claimUrl = computed(() => {
   return `${baseUrl}/claim/${sessionCode.value}`
 })
 
-// Poll for pending game start from phone
-let pollInterval: ReturnType<typeof setInterval>
-
-const pollForPendingGame = async () => {
-  try {
-    const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
-    if (res.pending) {
-      readyToPlay.value = true
-      clearInterval(pollInterval)
-    }
-  } catch (e) {
-    // Silently ignore
-  }
-}
-
 // Handle keyboard
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.code === 'Space' || e.code === 'Enter') {
     e.preventDefault()
     if (readyToPlay.value) {
-      // Phone triggered replay — start the game
       startGame()
     } else {
-      // Go back to menu for a new player
       returnToMenu()
     }
   }
@@ -167,15 +152,17 @@ onMounted(() => {
 
   if (process.client) {
     window.addEventListener('keydown', handleKeydown)
-    // Poll for phone-triggered replay every 2s
-    pollInterval = setInterval(pollForPendingGame, 2000)
+
+    // Listen for readyToPlay via WebSocket (phone triggered replay)
+    on('readyToPlay', () => {
+      readyToPlay.value = true
+    })
   }
 })
 
 onUnmounted(() => {
   if (process.client) {
     window.removeEventListener('keydown', handleKeydown)
-    clearInterval(pollInterval)
   }
 })
 

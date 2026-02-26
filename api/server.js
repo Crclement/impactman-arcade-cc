@@ -958,6 +958,12 @@ app.post('/api/consoles/:consoleId/login', (req, res) => {
     loggedInAt: new Date().toISOString(),
   });
 
+  // Notify console via WebSocket
+  sendToConsole(consoleId, {
+    type: 'userLoggedIn',
+    user: { id: user.id, name: user.name, email: user.email },
+  });
+
   console.log(`[${new Date().toISOString()}] User ${user.name} logged into console ${consoleId}`);
   res.json({ success: true });
 });
@@ -972,6 +978,7 @@ app.get('/api/consoles/:consoleId/logged-in-user', (req, res) => {
 app.delete('/api/consoles/:consoleId/logged-in-user', (req, res) => {
   consoleLogins.delete(req.params.consoleId);
   pendingGameStarts.delete(req.params.consoleId);
+  sendToConsole(req.params.consoleId, { type: 'userLoggedOut' });
   res.json({ success: true });
 });
 

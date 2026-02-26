@@ -56,8 +56,10 @@
 
 <script lang="ts" setup>
 import { useGameStore } from '~~/store/game';
+import { useConsoleSocket } from '~~/composables/useConsoleSocket';
 
 const store = useGameStore()
+const { connect, send, on, disconnect } = useConsoleSocket()
 
 // Console identification
 const consoleId = ref(process.client ? (localStorage.getItem('consoleId') || 'IMP-001') : 'IMP-001')
@@ -84,7 +86,6 @@ const handleKeydown = (e: KeyboardEvent) => {
   if ((e.code === 'Space' || e.code === 'Enter') && store.global.gameScreen === 'menu') {
     e.preventDefault()
     store.StartGame()
-    // Focus canvas after starting
     setTimeout(focusCanvas, 100)
   }
 
@@ -94,32 +95,16 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
-const config = useRuntimeConfig()
-
-// Poll API for console login (user logs in on phone, arcade detects it)
-const pollForLogin = async () => {
-  if (store.global.gameScreen !== 'menu' || store.loggedInUser) return
-  try {
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
-    const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`)
-    if (res.user && !store.loggedInUser) {
-      store.loggedInUser = res.user
-    }
-  } catch (e) {
-    // Silently ignore poll errors
-  }
-}
-
 // Load user and setup on mount
 onMounted(() => {
   if (process.client) {
     store.loadUser()
 
+    // Connect to WebSocket as this console
+    connect(consoleId.value)
+
     // Add keyboard listener for arcade controls
     window.addEventListener('keydown', handleKeydown)
-
-    // Poll API for login changes every 2s
-    const loginPoll = setInterval(pollForLogin, 2000)
 
     // Auto-focus canvas periodically to ensure keyboard input works
     const focusInterval = setInterval(() => {
@@ -128,11 +113,10 @@ onMounted(() => {
       }
     }, 500)
 
-    // Cleanup on unmount
     onUnmounted(() => {
       window.removeEventListener('keydown', handleKeydown)
       clearInterval(focusInterval)
-      clearInterval(loginPoll)
+      disconnect()
     })
   }
 })
