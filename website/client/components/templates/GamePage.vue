@@ -32,6 +32,10 @@ import GameOverView from '../molecules/GamePage/GameOverView.vue';
 
 const gameStore = useGameStore()
 
+onMounted(() => {
+  gameStore.fetchLeaderboard()
+})
+
 const shouldShowGame = computed(() => {
   return gameStore.global.gameScreen !== "gameover"
 })

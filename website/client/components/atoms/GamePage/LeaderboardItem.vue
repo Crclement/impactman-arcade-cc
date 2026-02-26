@@ -3,28 +3,34 @@
     :class="{'px-8': !small, 'px-4': small}"
   >
     <div :class="`font-retro ${small ? 'mr-2 text-xs' : 'mr-8'}`">
-      39
+      {{ rank }}
     </div>
     <div class="avatar mr-4">
       <img :class="`${small ? 'w-8 h-8' : 'w-16 h-16'}`" src="/images/homepage/scoreboard/ape-cool.png" />
     </div>
-    <div :class="`font-retro uppercase ${small ? 'text-xs' : ''}`">
-      franko
+    <div :class="`font-retro uppercase ${small ? 'text-xs' : ''} truncate`">
+      {{ name }}
     </div>
 
-    <div :class="`font-retro uppercase ml-auto ${small ? 'text-xs' : ''}`">
-      302,023
+    <div :class="`font-retro uppercase ml-auto ${small ? 'text-xs' : ''} whitespace-nowrap pl-2`">
+      {{ score.toLocaleString() }}
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-export interface LoadboardItemProps {
-  small: boolean
+export interface LeaderboardItemProps {
+  small?: boolean
+  rank?: number
+  name?: string
+  score?: number
 }
 
-const props = withDefaults(defineProps<LoadboardItemProps>(), {
-  small: false
+withDefaults(defineProps<LeaderboardItemProps>(), {
+  small: false,
+  rank: 0,
+  name: '—',
+  score: 0,
 })
 </script>
 

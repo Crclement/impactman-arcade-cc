@@ -21,7 +21,7 @@ export interface GameStore {
 }
 
 export interface GameScore {
-  user: Partial<User>,
+  user: Partial<User> & { name?: string },
   score: number
 }
 
@@ -75,6 +75,19 @@ export const useGameStore = defineStore('game', {
     },
     SendMessage(message: string){
       this.unityInstance.SendMessage("GameManager", "OnWebMessage", message)
+    },
+    async fetchLeaderboard() {
+      try {
+        const config = useRuntimeConfig()
+        const apiBase = config.public.apiBase || 'http://localhost:3001'
+        const res = await $fetch<any[]>(`${apiBase}/api/leaderboard`)
+        this.leaderboard = res.map((entry: any) => ({
+          user: { name: entry.userName },
+          score: entry.score,
+        }))
+      } catch {
+        // silent — leaderboard will show empty
+      }
     },
     StartGame(){
       this.unityInstance.SendMessage("StartManager", "LoadGame")
