@@ -1,9 +1,11 @@
 import { defineEventHandler, setResponseHeader } from 'h3'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { brotliDecompressSync } from 'zlib'
 
-// Brotli-compressed Unity files — cached in memory on first request
-const cache = new Map<string, Buffer>()
+// Caches: compressed (.br) and decompressed versions
+const brCache = new Map<string, Buffer>()
+const rawCache = new Map<string, Buffer>()
 
 const UNITY_FILES: Record<string, { brFile: string; contentType: string }> = {
   '/unity/impactman/Build/impactman.data': {
@@ -26,22 +28,46 @@ export default defineEventHandler((event) => {
   const entry = UNITY_FILES[pathname]
   if (!entry) return // Not a Unity file — let Nitro handle normally
 
-  // Serve from memory cache if available
-  let data = cache.get(pathname)
-  if (!data) {
-    try {
-      const buildDir = join(process.cwd(), 'public', 'unity', 'impactman', 'Build')
-      data = readFileSync(join(buildDir, entry.brFile))
-      cache.set(pathname, data)
-    } catch {
-      // .br file not found — fall through to default static handling
-      return
+  const acceptEncoding = (event.node.req.headers['accept-encoding'] || '') as string
+  const clientSupportsBr = acceptEncoding.includes('br')
+
+  if (clientSupportsBr) {
+    // Serve Brotli-compressed version
+    let data = brCache.get(pathname)
+    if (!data) {
+      try {
+        const buildDir = join(process.cwd(), 'public', 'unity', 'impactman', 'Build')
+        data = readFileSync(join(buildDir, entry.brFile))
+        brCache.set(pathname, data)
+      } catch {
+        return
+      }
     }
+
+    setResponseHeader(event, 'Content-Encoding', 'br')
+    setResponseHeader(event, 'Content-Type', entry.contentType)
+    setResponseHeader(event, 'Cache-Control', 'public, max-age=31536000, immutable')
+    return data
   }
 
-  setResponseHeader(event, 'Content-Encoding', 'br')
+  // Client doesn't support Brotli — decompress server-side
+  let raw = rawCache.get(pathname)
+  if (!raw) {
+    let compressed = brCache.get(pathname)
+    if (!compressed) {
+      try {
+        const buildDir = join(process.cwd(), 'public', 'unity', 'impactman', 'Build')
+        compressed = readFileSync(join(buildDir, entry.brFile))
+        brCache.set(pathname, compressed)
+      } catch {
+        return
+      }
+    }
+    raw = brotliDecompressSync(compressed)
+    rawCache.set(pathname, raw)
+  }
+
   setResponseHeader(event, 'Content-Type', entry.contentType)
   setResponseHeader(event, 'Cache-Control', 'public, max-age=31536000, immutable')
-
-  return data
+  return raw
 })
