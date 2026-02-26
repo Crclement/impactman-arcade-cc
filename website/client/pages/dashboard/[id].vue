@@ -33,20 +33,9 @@
             <div v-else class="text-[#16114F]/60 text-sm">{{ credits.paidCredits }} paid</div>
           </div>
         </div>
-
-        <!-- Buy More Credits -->
-        <div v-if="credits.freePlayUsed" class="mt-4 pt-4 border-t border-[#16114F]/20">
-          <div v-if="paymentLoading" class="flex justify-center py-3">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#16114F]"></div>
-          </div>
-          <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container"></div>
-          <p v-else class="text-[#16114F]/60 text-sm text-center">Apple Pay not available on this device</p>
-          <div v-if="paymentError" class="mt-2 text-center text-red-600 text-sm font-bold">{{ paymentError }}</div>
-          <div v-if="paymentSuccess" class="mt-2 text-center text-[#16114F] font-bold">Credit added!</div>
-        </div>
       </div>
 
-      <!-- Play Again on Console -->
+      <!-- Use Credit on Console -->
       <div v-if="consoleId" class="mb-6">
         <button
           v-if="credits.availablePlays > 0 && !playAgainSent"
@@ -66,9 +55,33 @@
         </div>
         <div v-else class="bg-white/10 rounded-2xl p-4 text-center">
           <p class="text-white/60 font-bold">No credits remaining</p>
-          <p class="text-white/40 text-sm mt-1">Add credits above to play again</p>
+          <p class="text-white/40 text-sm mt-1">Add a credit below to play</p>
         </div>
         <div v-if="playAgainError" class="mt-2 text-center text-red-400 text-sm">{{ playAgainError }}</div>
+      </div>
+
+      <!-- Add Credits section (always visible) -->
+      <div class="bg-white/5 rounded-2xl p-5 mb-6 border border-white/10">
+        <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Credits</p>
+
+        <div v-if="paymentLoading" class="flex justify-center py-3">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D9FF69]"></div>
+        </div>
+        <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container"></div>
+
+        <!-- Dev: Add Credit -->
+        <button
+          @click="devAddCredit"
+          :disabled="devCreditLoading"
+          class="w-full border-2 border-dashed border-white/20 text-white/40 py-3 rounded-xl text-sm transition hover:border-white/40 hover:text-white/60 disabled:opacity-50"
+          :class="{ 'mt-3': applePaySupported }"
+        >
+          {{ devCreditLoading ? 'Adding...' : 'Dev: Add Credit' }}
+        </button>
+
+        <div v-if="paymentError" class="mt-2 text-center text-red-400 text-sm font-bold">{{ paymentError }}</div>
+        <div v-if="paymentSuccess" class="mt-2 text-center text-[#D9FF69] font-bold">Credit added!</div>
+        <div v-if="devCreditSuccess" class="mt-2 text-center text-[#D9FF69] font-bold">Dev credit added!</div>
       </div>
 
       <!-- Real-World Impact (prominent) -->
@@ -180,6 +193,8 @@ const paymentSuccess = ref(false)
 const applePaySupported = ref(false)
 const squarePayments = ref<any>(null)
 const applePay = ref<any>(null)
+const devCreditLoading = ref(false)
+const devCreditSuccess = ref(false)
 
 onMounted(async () => {
   const apiBase = config.public.apiBase || 'http://localhost:3001'
@@ -349,6 +364,31 @@ async function triggerPlayAgain() {
     }
   } finally {
     playAgainLoading.value = false
+  }
+}
+
+async function devAddCredit() {
+  if (!userData.value) return
+  devCreditLoading.value = true
+  devCreditSuccess.value = false
+  const apiBase = config.public.apiBase || 'http://localhost:3001'
+
+  try {
+    const res = await $fetch<any>(`${apiBase}/api/users/${userData.value.id}/dev-credit`, {
+      method: 'POST',
+    })
+    if (res.success) {
+      credits.value.paidCredits = res.credits
+      credits.value.availablePlays = res.availablePlays
+      credits.value.freePlayUsed = true
+      devCreditSuccess.value = true
+      playAgainSent.value = false // Reset so Use Credit button reappears
+      setTimeout(() => { devCreditSuccess.value = false }, 3000)
+    }
+  } catch (_) {
+    // silent
+  } finally {
+    devCreditLoading.value = false
   }
 }
 
