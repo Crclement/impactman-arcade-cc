@@ -65,6 +65,5 @@ const doAuth = async () => {
     body: LoginValues
   })
 
-  console.log(res)
 }
 </script>

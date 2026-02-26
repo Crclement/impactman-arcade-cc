@@ -227,10 +227,7 @@ async function initializeApplePay() {
   try {
     const paymentConfig = await $fetch<any>(`${apiBase}/api/payments/config`)
 
-    if (!paymentConfig.applicationId) {
-      console.log('Square not configured')
-      return
-    }
+    if (!paymentConfig.applicationId) return
 
     if (!(window as any).Square) {
       const script = document.createElement('script')
@@ -242,8 +239,8 @@ async function initializeApplePay() {
     } else {
       await setupApplePay(paymentConfig)
     }
-  } catch (e) {
-    console.error('Failed to initialize Apple Pay:', e)
+  } catch (_) {
+    // silent — Apple Pay just won't be offered
   }
 }
 
@@ -279,8 +276,7 @@ async function setupApplePay(paymentConfig: any) {
         container.appendChild(button)
       }
     }
-  } catch (e) {
-    console.log('Apple Pay not available:', e)
+  } catch (_) {
     applePaySupported.value = false
   }
 }
@@ -321,7 +317,6 @@ async function handleApplePayClick() {
       paymentError.value = tokenResult.errors?.[0]?.message || 'Payment cancelled'
     }
   } catch (e: any) {
-    console.error('Apple Pay error:', e)
     paymentError.value = e.data?.error || 'Payment failed'
   } finally {
     paymentLoading.value = false

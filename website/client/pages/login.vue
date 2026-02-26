@@ -122,8 +122,7 @@ async function login() {
         if (!loginRes.wsDelivered) {
           wsHint.value = true
         }
-      } catch (e) {
-        console.error('Failed to notify console:', e)
+      } catch (_) {
         wsHint.value = true
       }
     }

@@ -126,8 +126,8 @@ const fetchFleetData = async () => {
     ])
     fleetConsoles.value = consolesData
     fleetStats.value = statsData
-  } catch (e: any) {
-    console.error('Failed to fetch fleet data:', e)
+  } catch (_) {
+    // silent
   } finally {
     fleetLoading.value = false
   }

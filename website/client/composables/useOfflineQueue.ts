@@ -66,12 +66,10 @@ export function useOfflineQueue() {
           body: req.body,
           headers: req.headers,
         })
-        console.log(`[OfflineQueue] Synced: ${req.method} ${req.url}`)
       } catch (e: any) {
         // If it's a 409 (duplicate) or 4xx client error, don't retry
         const status = e?.response?.status || e?.status
         if (status && status >= 400 && status < 500) {
-          console.log(`[OfflineQueue] Dropped (${status}): ${req.method} ${req.url}`)
         } else {
           // Network error or 5xx — keep in queue for retry
           remaining.push(req)
