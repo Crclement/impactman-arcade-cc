@@ -24,7 +24,6 @@ const gameStore = useGameStore()
 
 
 const OnWebMessage = (message: string) => {
-  console.log("message", message)
   const data: UnityWebMessage = JSON.parse(message)
 
   if (data.Event === "GlobalVariable") {
@@ -93,6 +92,22 @@ onBeforeRouteLeave(async () => {
 
 onBeforeMount(() => {
   window.OnWebMessage = OnWebMessage
+
+  // Resume AudioContext on first user gesture to suppress Unity's
+  // "AudioContext was not allowed to start" warnings
+  const resumeAudio = () => {
+    const ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+    if (ctx) {
+      const ac = new ctx()
+      ac.resume().then(() => ac.close())
+    }
+    document.removeEventListener('click', resumeAudio)
+    document.removeEventListener('touchstart', resumeAudio)
+    document.removeEventListener('keydown', resumeAudio)
+  }
+  document.addEventListener('click', resumeAudio, { once: true })
+  document.addEventListener('touchstart', resumeAudio, { once: true })
+  document.addEventListener('keydown', resumeAudio, { once: true })
 
   gameStore.$patch({
     global: {
