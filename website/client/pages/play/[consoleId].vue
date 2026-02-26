@@ -261,6 +261,8 @@ onMounted(async () => {
   // Route to login or dashboard
   if (user.value) {
     await loadDashboardData()
+    // If loadDashboardData triggered signOut (stale user), stay on login
+    if (!user.value) return
     state.value = 'dashboard'
     if (process.client) await initializeApplePay()
   } else {
@@ -348,8 +350,11 @@ async function fetchCredits() {
   try {
     const res = await $fetch<any>(`${apiBase.value}/api/users/${user.value.id}/credits`)
     credits.value = res
-  } catch (_) {
-    // silent — credits will show default
+  } catch (e: any) {
+    if (e.status === 404) {
+      signOut()
+      return
+    }
   }
 }
 
@@ -389,6 +394,11 @@ async function startGame() {
       state.value = 'game-starting'
     }
   } catch (e: any) {
+    if (e.data?.error === 'User not found' || e.status === 404) {
+      // Stale user in localStorage — force re-login
+      signOut()
+      return
+    }
     gameError.value = e.data?.error || 'Failed to start game'
     if (e.data?.needsPayment) {
       // Refresh credits
@@ -529,8 +539,11 @@ async function devAddCredit() {
       devCreditSuccess.value = true
       setTimeout(() => { devCreditSuccess.value = false }, 3000)
     }
-  } catch (_) {
-    // silent
+  } catch (e: any) {
+    if (e.status === 404) {
+      signOut()
+      return
+    }
   } finally {
     devCreditLoading.value = false
   }
