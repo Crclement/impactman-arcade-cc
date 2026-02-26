@@ -165,12 +165,25 @@ onMounted(() => {
       }
     }, 3000)
 
+    // Poll for pending game (readyToPlay) as fallback when WebSocket is down
+    const pendingGamePollInterval = setInterval(async () => {
+      if (store.readyToPlay || store.global.gameScreen !== 'menu') return
+      if (!store.loggedInUser) return
+      try {
+        const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
+        if (res.pending) {
+          store.readyToPlay = true
+        }
+      } catch (_) {}
+    }, 3000)
+
     onUnmounted(() => {
       window.removeEventListener('keydown', handleKeydown)
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
       clearInterval(focusInterval)
       clearInterval(loginPollInterval)
+      clearInterval(pendingGamePollInterval)
       disconnect()
     })
   }

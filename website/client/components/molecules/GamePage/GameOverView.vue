@@ -155,6 +155,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 // Save or create session on mount
 let cleanupReadyToPlay: (() => void) | null = null
 let autoReturnTimer: ReturnType<typeof setTimeout> | null = null
+let pendingGamePoll: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   if (gameStore.loggedInUser) {
@@ -173,6 +174,18 @@ onMounted(() => {
       // Reset auto-return timer when phone triggers replay
       if (autoReturnTimer) clearTimeout(autoReturnTimer)
     })
+
+    // Poll for pending game as fallback (in case WebSocket is down)
+    pendingGamePoll = setInterval(async () => {
+      if (readyToPlay.value) return
+      try {
+        const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
+        if (res.pending) {
+          readyToPlay.value = true
+          if (autoReturnTimer) clearTimeout(autoReturnTimer)
+        }
+      } catch (_) {}
+    }, 3000)
 
     // Auto-return to menu after 60 seconds of inactivity
     // This ensures the arcade resets if a player walks away
@@ -195,6 +208,10 @@ onUnmounted(() => {
     if (autoReturnTimer) {
       clearTimeout(autoReturnTimer)
       autoReturnTimer = null
+    }
+    if (pendingGamePoll) {
+      clearInterval(pendingGamePoll)
+      pendingGamePoll = null
     }
   }
 })
@@ -307,7 +324,8 @@ function startGame() {
 }
 
 function returnToMenu() {
-  // Clear user and go back to menu
+  // Clear user and reload page for a fully clean state
+  // (Unity was Quit() at game over, so it can't restart without a reload)
   const token = process.client ? localStorage.getItem('impactarcade_token') : null
   gameStore.clearUser()
   gameStore.readyToPlay = false
@@ -317,15 +335,10 @@ function returnToMenu() {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   }).catch(() => {})
 
-  gameStore.$patch({
-    global: {
-      gameScreen: 'menu',
-      currentScore: 0,
-      currentLevel: 1,
-      currentLives: 3,
-      currentBags: 0,
-    }
-  })
+  // Full page reload to restart Unity cleanly
+  if (process.client) {
+    window.location.reload()
+  }
 }
 </script>
 
