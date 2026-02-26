@@ -60,8 +60,17 @@
 
       <!-- DASHBOARD STATE (the arcade controller) -->
       <div v-else-if="state === 'dashboard'" class="w-full max-w-sm">
-        <!-- User greeting -->
-        <p class="text-white/60 text-sm text-center mb-4">Hey, <span class="text-white font-bold">{{ user?.name }}</span></p>
+        <!-- User greeting + console connection -->
+        <div class="text-center mb-4">
+          <p class="text-white/60 text-sm">Hey, <span class="text-white font-bold">{{ user?.name }}</span></p>
+          <div class="flex items-center justify-center gap-2 mt-1">
+            <span class="w-2 h-2 bg-[#00DC82] rounded-full inline-block animate-pulse"></span>
+            <span class="text-[#00DC82] text-xs font-bold">Connected to {{ consoleId }}</span>
+          </div>
+          <button @click="disconnectConsole" class="text-white/30 text-xs mt-1 hover:text-white/50 transition underline">
+            Disconnect from console
+          </button>
+        </div>
 
         <!-- Credit pill -->
         <div class="bg-gradient-to-r from-[#D9FF69] to-[#00DC82] rounded-2xl p-5 mb-5">
@@ -157,6 +166,25 @@
         </button>
       </div>
 
+      <!-- DISCONNECTED STATE (logged in but not connected to a console) -->
+      <div v-else-if="state === 'disconnected'" class="text-center w-full max-w-sm">
+        <p class="text-white/60 text-sm mb-2">Logged in as <span class="text-white font-bold">{{ user?.name }}</span></p>
+
+        <div class="bg-white/10 rounded-2xl p-6 mb-6 border border-white/10">
+          <div class="text-4xl mb-3">📱</div>
+          <h2 class="text-white text-xl font-bold mb-2">Disconnected</h2>
+          <p class="text-white/50 text-sm">Scan a QR code on an arcade machine to reconnect</p>
+        </div>
+
+        <button @click="reconnectConsole" class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition mb-3">
+          Reconnect to {{ consoleId }}
+        </button>
+
+        <button @click="signOut" class="w-full text-white/30 text-xs py-2 hover:text-white/50 transition">
+          Sign out
+        </button>
+      </div>
+
     </div>
 
     <!-- Footer -->
@@ -179,7 +207,7 @@ const config = useRuntimeConfig()
 const consoleId = computed(() => route.params.consoleId as string)
 
 // State machine
-const state = ref<'loading' | 'console-error' | 'login' | 'dashboard'>('loading')
+const state = ref<'loading' | 'console-error' | 'login' | 'dashboard' | 'disconnected'>('loading')
 
 // User + auth
 const user = ref<any>(null)
@@ -210,6 +238,32 @@ const applePay = ref<any>(null)
 // Dev credit
 const devCreditLoading = ref(false)
 const devCreditSuccess = ref(false)
+
+// Credit used poll — detect when arcade consumes the pending game
+let creditUsedPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startCreditUsedPoll() {
+  stopCreditUsedPoll()
+  creditUsedPollTimer = setInterval(async () => {
+    try {
+      const res = await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/pending-game`)
+      if (!res.pending) {
+        // Arcade consumed the credit — game started or expired
+        creditUsed.value = false
+        stopCreditUsedPoll()
+        // Re-fetch credits to show updated count
+        await fetchCredits()
+      }
+    } catch (_) {}
+  }, 3000)
+}
+
+function stopCreditUsedPoll() {
+  if (creditUsedPollTimer) {
+    clearInterval(creditUsedPollTimer)
+    creditUsedPollTimer = null
+  }
+}
 
 // API base
 const apiBase = computed(() => {
@@ -389,6 +443,8 @@ async function startGame() {
         credits.value.paidCredits = res.creditsRemaining
       }
       creditUsed.value = true
+      // Poll until arcade consumes the credit, then reset
+      startCreditUsedPoll()
     }
   } catch (e: any) {
     if (e.data?.error === 'User not found' || e.status === 404) {
@@ -535,6 +591,43 @@ async function devAddCredit() {
   } finally {
     devCreditLoading.value = false
   }
+}
+
+// ── Console disconnect/reconnect ──
+
+async function disconnectConsole() {
+  // Clear this user from the console but stay logged in
+  try {
+    await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/logged-in-user`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    })
+  } catch (_) {}
+
+  creditUsed.value = false
+  stopCreditUsedPoll()
+  state.value = 'disconnected'
+}
+
+async function reconnectConsole() {
+  state.value = 'loading'
+  const connected = await checkConsole()
+  if (!connected) {
+    state.value = 'console-error'
+    return
+  }
+
+  // Re-notify console of this user
+  try {
+    await $fetch<any>(`${apiBase.value}/api/consoles/${consoleId.value}/login`, {
+      method: 'POST',
+      body: { userId: user.value.id },
+    })
+  } catch (_) {}
+
+  await loadDashboardData()
+  if (!user.value) return
+  state.value = 'dashboard'
 }
 
 // ── Sign out ──

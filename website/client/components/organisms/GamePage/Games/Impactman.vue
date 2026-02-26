@@ -32,18 +32,26 @@
         <p v-else class="text-[#16114F]/60 text-xs">Use a credit on your phone to play</p>
       </div>
 
-      <!-- Play button and QR code inline -->
+      <!-- Play button + QR code -->
       <div class="flex items-center gap-4">
+        <!-- Play button: only active when readyToPlay -->
         <button
+          v-if="store.readyToPlay"
           @click="() => store.StartGame()"
-          :class="{ 'button-flash': store.readyToPlay }"
-          class="button-play font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
+          class="button-play button-flash font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
+          <span class="text-play">Play</span>
+        </button>
+        <button
+          v-else
+          disabled
+          class="button-play font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple/40 text-center rounded-xl opacity-50 cursor-not-allowed">
           <span class="text-play">Play</span>
         </button>
 
-        <!-- QR Code Box (only show if not logged in) -->
-        <div v-if="!store.loggedInUser" class="bg-white/95 rounded-lg p-2 shadow-lg">
+        <!-- QR Code always visible — scan to login or switch user -->
+        <div class="bg-white/95 rounded-lg p-2 shadow-lg text-center">
           <img :src="loginQrUrl" alt="Login QR" class="w-16 h-16 rounded" />
+          <p v-if="store.loggedInUser" class="text-[8px] text-gray-500 mt-1">Not you?<br>Scan here</p>
         </div>
       </div>
 
@@ -97,8 +105,8 @@ const focusCanvas = () => {
 
 // Handle keyboard events for arcade cabinet
 const handleKeydown = (e: KeyboardEvent) => {
-  // Spacebar or Enter to start game when on menu
-  if ((e.code === 'Space' || e.code === 'Enter') && store.global.gameScreen === 'menu') {
+  // Spacebar or Enter to start game — only when a credit has been used
+  if ((e.code === 'Space' || e.code === 'Enter') && store.global.gameScreen === 'menu' && store.readyToPlay) {
     e.preventDefault()
     store.StartGame()
     setTimeout(focusCanvas, 100)
