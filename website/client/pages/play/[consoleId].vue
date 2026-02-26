@@ -72,7 +72,13 @@
           </button>
         </div>
 
-        <!-- Credit pill -->
+        <!-- Total bags removed -->
+        <div class="bg-gradient-to-r from-[#00DC82]/20 to-[#4D8BEC]/20 rounded-2xl p-4 mb-5 border border-white/10 text-center">
+          <div class="text-3xl font-bold text-[#D9FF69]">{{ gameStats.totalBags || 0 }}</div>
+          <div class="text-white/50 text-xs font-bold uppercase">Total Bags Removed from Ocean</div>
+        </div>
+
+        <!-- Token pill -->
         <div class="bg-gradient-to-r from-[#D9FF69] to-[#00DC82] rounded-2xl p-5 mb-5">
           <div class="flex items-center justify-between">
             <div>
@@ -119,7 +125,7 @@
         <!-- Error from start-game -->
         <p v-if="gameError" class="text-red-400 text-sm text-center mb-4">{{ gameError }}</p>
 
-        <!-- Add Credits section (always visible) -->
+        <!-- Add Tokens section (always visible) -->
         <div class="bg-white/5 rounded-2xl p-4 mb-5 border border-white/10">
           <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Tokens</p>
 
@@ -127,14 +133,24 @@
           <div v-if="paymentLoading" class="flex justify-center py-3">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D9FF69]"></div>
           </div>
-          <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container"></div>
+          <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container mb-3"></div>
 
-          <!-- Dev: Add Credit -->
+          <!-- Square Card form -->
+          <div id="card-container" class="mb-3"></div>
+          <button
+            v-if="cardReady"
+            @click="handleCardPayment"
+            :disabled="cardPaymentLoading"
+            class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition disabled:opacity-50 mb-3"
+          >
+            {{ cardPaymentLoading ? 'Processing...' : 'Buy Token — $1' }}
+          </button>
+
+          <!-- Dev: Add Token -->
           <button
             @click="devAddCredit"
             :disabled="devCreditLoading"
             class="w-full border-2 border-dashed border-white/20 text-white/40 py-3 rounded-xl text-sm transition hover:border-white/40 hover:text-white/60 disabled:opacity-50"
-            :class="{ 'mt-3': applePaySupported }"
           >
             {{ devCreditLoading ? 'Adding...' : 'Dev: Add Token' }}
           </button>
@@ -220,7 +236,7 @@ const loginError = ref<string | null>(null)
 
 // Dashboard data
 const credits = ref({ freePlayUsed: false, paidCredits: 0, availablePlays: 1 })
-const gameStats = ref<any>({ highScore: 0, gamesPlayed: 0, bestLevel: 1 })
+const gameStats = ref<any>({ highScore: 0, gamesPlayed: 0, bestLevel: 1, totalBags: 0 })
 
 // Game start
 const starting = ref(false)
@@ -234,6 +250,11 @@ const paymentError = ref<string | null>(null)
 const paymentSuccess = ref(false)
 const squarePayments = ref<any>(null)
 const applePay = ref<any>(null)
+
+// Square Card
+const cardReady = ref(false)
+const cardInstance = ref<any>(null)
+const cardPaymentLoading = ref(false)
 
 // Dev credit
 const devCreditLoading = ref(false)
@@ -418,6 +439,7 @@ async function fetchScores() {
         highScore: Math.max(...res.scores.map((s: any) => s.score || 0)),
         gamesPlayed: res.scores.length,
         bestLevel: Math.max(...res.scores.map((s: any) => s.level || 1)),
+        totalBags: res.scores.reduce((sum: number, s: any) => sum + (s.bags || 0), 0),
       }
     }
   } catch (_) {
@@ -443,6 +465,8 @@ async function startGame() {
         credits.value.paidCredits = res.creditsRemaining
       }
       creditUsed.value = true
+      // Auto-dismiss the "Token Used!" message after 5 seconds
+      setTimeout(() => { creditUsed.value = false }, 5000)
       // Poll until arcade consumes the credit, then reset
       startCreditUsedPoll()
     }
@@ -462,7 +486,7 @@ async function startGame() {
   }
 }
 
-// ── Apple Pay ──
+// ── Square Payments (Apple Pay + Card) ──
 
 async function initializeApplePay() {
   try {
@@ -475,24 +499,25 @@ async function initializeApplePay() {
       script.src = paymentConfig.environment === 'production'
         ? 'https://web.squarecdn.com/v1/square.js'
         : 'https://sandbox.web.squarecdn.com/v1/square.js'
-      script.onload = () => setupApplePay(paymentConfig)
+      script.onload = () => setupPayments(paymentConfig)
       document.head.appendChild(script)
     } else {
-      await setupApplePay(paymentConfig)
+      await setupPayments(paymentConfig)
     }
   } catch (_) {
-    // silent — Apple Pay just won't be offered
+    // silent — payments just won't be offered
   }
 }
 
-async function setupApplePay(paymentConfig: any) {
-  try {
-    const payments = (window as any).Square.payments(
-      paymentConfig.applicationId,
-      paymentConfig.locationId
-    )
-    squarePayments.value = payments
+async function setupPayments(paymentConfig: any) {
+  const payments = (window as any).Square.payments(
+    paymentConfig.applicationId,
+    paymentConfig.locationId
+  )
+  squarePayments.value = payments
 
+  // Apple Pay (may not be supported on all devices)
+  try {
     const applePayInstance = await payments.applePay({
       countryCode: 'US',
       currencyCode: 'USD',
@@ -519,6 +544,17 @@ async function setupApplePay(paymentConfig: any) {
     }
   } catch (_) {
     applePaySupported.value = false
+  }
+
+  // Card form (always available)
+  try {
+    const card = await payments.card()
+    await nextTick()
+    await card.attach('#card-container')
+    cardInstance.value = card
+    cardReady.value = true
+  } catch (_) {
+    // silent — card form won't be shown
   }
 }
 
@@ -560,6 +596,50 @@ async function handleApplePayClick() {
     paymentError.value = e.data?.error || 'Payment failed'
   } finally {
     paymentLoading.value = false
+  }
+}
+
+// ── Card payment ──
+
+async function handleCardPayment() {
+  if (!cardInstance.value || !user.value) return
+
+  cardPaymentLoading.value = true
+  paymentError.value = null
+  paymentSuccess.value = false
+
+  try {
+    const tokenResult = await cardInstance.value.tokenize()
+
+    if (tokenResult.status === 'OK') {
+      const result = await $fetch<any>(`${apiBase.value}/api/payments/apple-pay`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: {
+          userId: user.value.id,
+          sourceId: tokenResult.token,
+        },
+      })
+
+      if (result.success) {
+        paymentSuccess.value = true
+        credits.value.paidCredits = result.credits
+        credits.value.availablePlays = result.availablePlays
+        creditUsed.value = false // Reset so Use Token button reappears
+
+        setTimeout(() => {
+          paymentSuccess.value = false
+        }, 3000)
+      } else {
+        paymentError.value = result.error || 'Payment failed'
+      }
+    } else {
+      paymentError.value = tokenResult.errors?.[0]?.message || 'Payment failed'
+    }
+  } catch (e: any) {
+    paymentError.value = e.data?.error || 'Payment failed'
+  } finally {
+    cardPaymentLoading.value = false
   }
 }
 
