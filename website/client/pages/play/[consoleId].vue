@@ -213,7 +213,18 @@ function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+const APP_VERSION = 'v2.1.0 — QR Unified Dashboard'
+
 onMounted(async () => {
+  console.log(
+    `%c 🕹️ IMPACT ARCADE ${APP_VERSION} `,
+    'background: #D9FF69; color: #16114F; font-size: 16px; font-weight: bold; padding: 6px 12px; border-radius: 4px;'
+  )
+  console.log(
+    `%c Console: ${consoleId.value} | ${new Date().toLocaleString()} `,
+    'background: #16114F; color: #D9FF69; font-size: 11px; padding: 3px 8px; border-radius: 2px;'
+  )
+
   // Check for saved user
   if (process.client) {
     const savedUser = localStorage.getItem('impactarcade_user')
