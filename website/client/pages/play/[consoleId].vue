@@ -301,6 +301,8 @@ const devCreditSuccess = ref(false)
 
 // Credit used poll — detect when arcade consumes the pending game
 let creditUsedPollTimer: ReturnType<typeof setInterval> | null = null
+// Periodic dashboard data refresh (keeps scores/credits in sync after games)
+let dashboardPollTimer: ReturnType<typeof setInterval> | null = null
 
 function startCreditUsedPoll() {
   stopCreditUsedPoll()
@@ -322,6 +324,22 @@ function stopCreditUsedPoll() {
   if (creditUsedPollTimer) {
     clearInterval(creditUsedPollTimer)
     creditUsedPollTimer = null
+  }
+}
+
+function startDashboardPoll() {
+  stopDashboardPoll()
+  dashboardPollTimer = setInterval(async () => {
+    if (state.value === 'dashboard' && user.value) {
+      await Promise.all([fetchCredits(), fetchScores()])
+    }
+  }, 15_000)
+}
+
+function stopDashboardPoll() {
+  if (dashboardPollTimer) {
+    clearInterval(dashboardPollTimer)
+    dashboardPollTimer = null
   }
 }
 
@@ -376,9 +394,15 @@ onMounted(async () => {
     if (!user.value) return
     state.value = 'dashboard'
     if (process.client) await initializePayments()
+    startDashboardPoll()
   } else {
     state.value = 'login'
   }
+})
+
+onUnmounted(() => {
+  stopCreditUsedPoll()
+  stopDashboardPoll()
 })
 
 // ── Console check ──
@@ -442,6 +466,7 @@ async function handleLogin() {
     await loadDashboardData()
     state.value = 'dashboard'
     if (process.client) await initializePayments()
+    startDashboardPoll()
   } catch (e: any) {
     loginError.value = e.data?.error || 'Failed to login. Please try again.'
   } finally {

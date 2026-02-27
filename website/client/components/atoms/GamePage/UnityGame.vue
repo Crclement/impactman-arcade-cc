@@ -116,28 +116,39 @@ onBeforeMount(() => {
   })
 })
 
+const UNITY_LOAD_TIMEOUT = 60_000 // 60 seconds
+
 const loadUnityGame = async () => {
   var meta = document.createElement('meta');
   meta.name = 'viewport';
   meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
   document.getElementsByTagName('head')[0].appendChild(meta);
-  const unity = await createUnityInstance(document.querySelector("#unity-canvas"), {
-    dataUrl: "/unity/impactman/Build/impactman.data",
-    frameworkUrl: "/unity/impactman/Build/impactman.framework.js",
-    codeUrl: "/unity/impactman/Build/impactman.wasm",
-    streamingAssetsUrl: "/unity/impactman/StreamingAssets",
-    companyName: "Dollar Donation Club",
-    productName: "ImpactMan",
-    productVersion: "1.0",
-    // Silence Unity's verbose framework logging
-    print: () => {},
-    printErr: () => {},
-    showBanner: () => {},
-  }) as any;
 
-  gameStore.$patch({
-    unityInstance: unity
-  })
+  try {
+    const unity = await Promise.race([
+      createUnityInstance(document.querySelector("#unity-canvas"), {
+        dataUrl: "/unity/impactman/Build/impactman.data",
+        frameworkUrl: "/unity/impactman/Build/impactman.framework.js",
+        codeUrl: "/unity/impactman/Build/impactman.wasm",
+        streamingAssetsUrl: "/unity/impactman/StreamingAssets",
+        companyName: "Dollar Donation Club",
+        productName: "ImpactMan",
+        productVersion: "1.0",
+        print: (msg: string) => { if (msg) console.log('[Unity]', msg) },
+        printErr: (msg: string) => { if (msg) console.warn('[Unity]', msg) },
+        showBanner: () => {},
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Unity load timeout (60s)')), UNITY_LOAD_TIMEOUT)
+      ),
+    ]) as any;
+
+    gameStore.$patch({ unityInstance: unity })
+  } catch (e: any) {
+    console.error('[Unity] Failed to load:', e.message || e)
+    // Don't hang on loading — transition to menu so the QR code is visible
+    gameStore.$patch({ global: { gameScreen: 'menu' } })
+  }
 }
 
 </script>

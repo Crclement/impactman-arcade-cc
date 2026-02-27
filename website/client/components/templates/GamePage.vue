@@ -20,23 +20,25 @@
         <OrganismsGamePageLeaderboard class="md:hidden" />
       </div>
     </AtomsContainer>
-    <GameOverView v-if="gameStore.global.gameScreen === 'gameover'" />
-
     <MoleculesGamePageWinPage v-if="gameStore.global.gameScreen === 'win'" />
 </div>
 </template>
 
 <script lang="ts" setup>
 import { useGameStore } from '~~/store/game'
-import GameOverView from '../molecules/GamePage/GameOverView.vue';
+import { useOfflineQueue } from '~~/composables/useOfflineQueue'
 
 const gameStore = useGameStore()
 const route = useRoute()
+const config = useRuntimeConfig()
+const { enqueue, startAutoSync } = useOfflineQueue()
 
 // Console identification
 const consoleId = process.client
   ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'IMP-001')
   : 'IMP-001'
+
+const apiBase = config.public.apiBase || 'http://localhost:3001'
 
 // Only show score/level/tickets after a game has ended (not on menu)
 const showLastGameStats = computed(() => {
@@ -46,18 +48,48 @@ const showLastGameStats = computed(() => {
 onMounted(() => {
   gameStore.fetchLeaderboard()
   gameStore.fetchConsoleTotalBags(consoleId)
+  // Sync any pending offline scores from previous sessions
+  if (process.client) startAutoSync()
 })
 
-const shouldShowGame = computed(() => {
-  return gameStore.global.gameScreen !== "gameover"
-})
-
-watch(() => gameStore.global.gameScreen, (newVal) => {
+watch(() => gameStore.global.gameScreen, async (newVal) => {
   if (newVal === "gameover") {
     gameStore.unityInstance?.Quit()
-    // Refresh console total bags and leaderboard to include the game just played
-    gameStore.fetchConsoleTotalBags(consoleId)
-    gameStore.fetchLeaderboard()
+
+    // Save score in background, then reload to return to home screen
+    if (gameStore.loggedInUser) {
+      const userId = gameStore.loggedInUser.id
+      const token = process.client ? localStorage.getItem('impactarcade_token') : null
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const scoreBody = {
+        consoleId,
+        raspiId: process.client ? (localStorage.getItem('raspiId') || 'RPI-001') : 'RPI-001',
+        score: gameStore.global.currentScore,
+        level: gameStore.global.currentLevel,
+        bags: gameStore.global.currentBags,
+        plasticRemoved: gameStore.global.currentBags * 0.1,
+      }
+
+      try {
+        // Try saving with a 3s timeout so we don't block the reload
+        await Promise.race([
+          $fetch(`${apiBase}/api/users/${userId}/scores`, {
+            method: 'POST',
+            headers,
+            body: scoreBody,
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ])
+      } catch {
+        // Enqueue for offline sync (persists to localStorage, will retry on next load)
+        enqueue(`${apiBase}/api/users/${userId}/scores`, 'POST', scoreBody, headers)
+      }
+    }
+
+    // Reload page — returns to QR scan home screen with fresh Unity
+    if (process.client) {
+      window.location.reload()
+    }
   }
 })
 
