@@ -168,10 +168,49 @@ const tests = ref<TestItem[]>([
   }),
 
   // Payments
-  makeTest('GET /api/payments/config', 'README: Square SDK config', async () => {
+  makeTest('GET /api/payments/config', 'Returns activeProvider, environment, providers (stripe + bolt)', async () => {
     const res = await $fetch<any>(`${apiBase}/api/payments/config`)
     if (!('pricePerPlay' in res)) throw new Error('Missing pricePerPlay')
     if (!('currency' in res)) throw new Error('Missing currency')
+    if (!('activeProvider' in res)) throw new Error('Missing activeProvider')
+    if (!('environment' in res)) throw new Error('Missing environment')
+    if (!res.providers) throw new Error('Missing providers object')
+    if (!('stripe' in res.providers)) throw new Error('Missing providers.stripe')
+    if (!('bolt' in res.providers)) throw new Error('Missing providers.bolt')
+    if (!('configured' in res.providers.stripe)) throw new Error('Missing providers.stripe.configured')
+    if (!('configured' in res.providers.bolt)) throw new Error('Missing providers.bolt.configured')
+    if (!('cdnUrl' in res.providers.bolt)) throw new Error('Missing providers.bolt.cdnUrl')
+  }),
+
+  makeTest('POST /api/payments/bolt/order-token', 'Returns orderToken or mock — requires auth', async () => {
+    const login = await $fetch<any>(`${apiBase}/api/users/login`, {
+      method: 'POST',
+      body: { email: `__test__doc_bolt_${Date.now()}@test.impactarcade.com`, name: 'Bolt Test' },
+    })
+    const res = await $fetch<any>(`${apiBase}/api/payments/bolt/order-token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${login.token}` },
+    })
+    if (res.mock) {
+      if (!res.success) throw new Error('Mock mode missing success')
+    } else {
+      if (!res.orderToken) throw new Error('Missing orderToken')
+    }
+  }),
+
+  makeTest('POST /api/admin/payments/provider (no auth)', 'Admin-only — expects 401 without token', async () => {
+    try {
+      await $fetch(`${apiBase}/api/admin/payments/provider`, {
+        method: 'POST',
+        body: { provider: 'stripe' },
+      })
+      throw new Error('Expected 401 but succeeded')
+    } catch (e: any) {
+      const status = e?.response?.status || e?.status
+      if (status === 401) return
+      if (e.message === 'Expected 401 but succeeded') throw e
+      throw new Error(`Expected 401, got ${status}`)
+    }
   }),
 
   // Admin

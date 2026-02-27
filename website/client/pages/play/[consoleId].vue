@@ -60,16 +60,9 @@
 
       <!-- DASHBOARD STATE (the arcade controller) -->
       <div v-else-if="state === 'dashboard'" class="w-full max-w-sm">
-        <!-- User greeting + console connection -->
+        <!-- User greeting -->
         <div class="text-center mb-4">
           <p class="text-white/60 text-sm">Hey, <span class="text-white font-bold">{{ user?.name }}</span></p>
-          <div class="flex items-center justify-center gap-2 mt-1">
-            <span class="w-2 h-2 bg-[#00DC82] rounded-full inline-block animate-pulse"></span>
-            <span class="text-[#00DC82] text-xs font-bold">Connected to {{ consoleId }}</span>
-          </div>
-          <button @click="disconnectConsole" class="text-white/30 text-xs mt-1 hover:text-white/50 transition underline">
-            Disconnect from console
-          </button>
         </div>
 
         <!-- Total bags removed -->
@@ -129,36 +122,51 @@
         <div class="bg-white/5 rounded-2xl p-4 mb-5 border border-white/10">
           <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Tokens</p>
 
-          <!-- Buy Token button (reveals Stripe Payment Element) -->
-          <button
-            v-if="!showPaymentForm && stripeReady"
-            @click="handleBuyToken"
-            :disabled="paymentLoading"
-            class="w-full bg-white text-[#16114F] py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mb-3 border border-white/20 disabled:opacity-50"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-            {{ paymentLoading ? 'Loading...' : 'Buy Token — $1' }}
-          </button>
-
-          <!-- Stripe Payment Element (inline) -->
-          <div v-if="showPaymentForm" class="mb-3">
-            <div class="flex items-center justify-between mb-2">
-              <div class="flex items-center gap-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00DC82" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span class="text-white/40 text-[10px]">Secured by Stripe</span>
-              </div>
-              <button @click="cancelPayment" class="text-white/30 text-xs hover:text-white/50">Cancel</button>
-            </div>
-            <div id="payment-element" class="mb-3"></div>
+          <!-- STRIPE: Buy Token button (reveals Stripe Payment Element) -->
+          <template v-if="activeProvider === 'stripe'">
             <button
-              v-if="paymentElementReady"
-              @click="confirmPayment"
-              :disabled="paymentProcessing"
-              class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition disabled:opacity-50"
+              v-if="!showPaymentForm && stripeReady"
+              @click="handleBuyToken"
+              :disabled="paymentLoading"
+              class="w-full bg-white text-[#16114F] py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mb-3 border border-white/20 disabled:opacity-50"
             >
-              {{ paymentProcessing ? 'Processing...' : 'Pay $1' }}
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              {{ paymentLoading ? 'Loading...' : 'Buy Token — $1' }}
             </button>
-          </div>
+
+            <!-- Stripe Payment Element (inline) -->
+            <div v-if="showPaymentForm" class="mb-3">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00DC82" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <span class="text-white/40 text-[10px]">Secured by Stripe</span>
+                </div>
+                <button @click="cancelPayment" class="text-white/30 text-xs hover:text-white/50">Cancel</button>
+              </div>
+              <div id="payment-element" class="mb-3"></div>
+              <button
+                v-if="paymentElementReady"
+                @click="confirmPayment"
+                :disabled="paymentProcessing"
+                class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition disabled:opacity-50"
+              >
+                {{ paymentProcessing ? 'Processing...' : 'Pay $1' }}
+              </button>
+            </div>
+          </template>
+
+          <!-- BOLT: Buy Token button -->
+          <template v-else-if="activeProvider === 'bolt'">
+            <button
+              v-if="boltReady"
+              @click="handleBuyTokenBolt"
+              :disabled="boltLoading"
+              class="w-full bg-white text-[#16114F] py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mb-3 border border-white/20 disabled:opacity-50"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              {{ boltLoading ? 'Loading...' : 'Buy Token — $1' }}
+            </button>
+          </template>
 
           <!-- Dev: Add Token -->
           <button
@@ -188,6 +196,17 @@
             <div class="text-xl font-bold text-[#00DC82]">L{{ gameStats.bestLevel || 1 }}</div>
             <div class="text-[10px] text-white/50 uppercase">Best Level</div>
           </div>
+        </div>
+
+        <!-- Console connection -->
+        <div class="text-center mb-3">
+          <div class="flex items-center justify-center gap-2">
+            <span class="w-2 h-2 bg-[#00DC82] rounded-full inline-block animate-pulse"></span>
+            <span class="text-[#00DC82] text-xs font-bold">Connected to {{ consoleId }}</span>
+          </div>
+          <button @click="disconnectConsole" class="text-white/30 text-xs mt-1 hover:text-white/50 transition underline">
+            Disconnect from console
+          </button>
         </div>
 
         <!-- Sign out -->
@@ -257,6 +276,10 @@ const starting = ref(false)
 const gameError = ref<string | null>(null)
 const creditUsed = ref(false)
 
+// Payment provider
+const activeProvider = ref<'stripe' | 'bolt'>('stripe')
+const paymentConfig = ref<any>(null)
+
 // Stripe payments
 const stripeReady = ref(false)
 const stripeInstance = ref<any>(null)
@@ -267,6 +290,10 @@ const paymentLoading = ref(false)
 const paymentProcessing = ref(false)
 const paymentError = ref<string | null>(null)
 const paymentSuccess = ref(false)
+
+// Bolt payments
+const boltReady = ref(false)
+const boltLoading = ref(false)
 
 // Dev credit
 const devCreditLoading = ref(false)
@@ -348,7 +375,7 @@ onMounted(async () => {
     // If loadDashboardData triggered signOut (stale user), stay on login
     if (!user.value) return
     state.value = 'dashboard'
-    if (process.client) await initializeStripe()
+    if (process.client) await initializePayments()
   } else {
     state.value = 'login'
   }
@@ -414,7 +441,7 @@ async function handleLogin() {
     // Fetch dashboard data then transition
     await loadDashboardData()
     state.value = 'dashboard'
-    if (process.client) await initializeStripe()
+    if (process.client) await initializePayments()
   } catch (e: any) {
     loginError.value = e.data?.error || 'Failed to login. Please try again.'
   } finally {
@@ -446,16 +473,19 @@ async function fetchScores() {
   if (!user.value) return
   try {
     const res = await $fetch<any>(`${apiBase.value}/api/users/${user.value.id}/scores`)
-    if (res.scores && res.scores.length > 0) {
+    // Use the server-computed stats object (more reliable than client-side computation)
+    if (res.stats) {
       gameStats.value = {
-        highScore: Math.max(...res.scores.map((s: any) => s.score || 0)),
-        gamesPlayed: res.scores.length,
-        bestLevel: Math.max(...res.scores.map((s: any) => s.level || 1)),
-        totalBags: res.scores.reduce((sum: number, s: any) => sum + (s.bags || 0), 0),
+        highScore: res.stats.highScore || 0,
+        gamesPlayed: res.stats.totalGames || 0,
+        bestLevel: res.scores?.length > 0
+          ? Math.max(...res.scores.map((s: any) => s.level || 1))
+          : 1,
+        totalBags: res.user?.totalBags ?? res.stats.totalBags ?? 0,
       }
     }
-  } catch (_) {
-    // silent — stats will show defaults
+  } catch (e) {
+    console.warn('[Play] Failed to fetch scores:', e)
   }
 }
 
@@ -498,23 +528,63 @@ async function startGame() {
   }
 }
 
-// ── Stripe Payments ──
+// ── Payment Initialization ──
 
-async function initializeStripe() {
+async function initializePayments() {
   try {
-    const paymentConfig = await $fetch<any>(`${apiBase.value}/api/payments/config`)
+    const cfg = await $fetch<any>(`${apiBase.value}/api/payments/config`)
+    paymentConfig.value = cfg
+    activeProvider.value = cfg.activeProvider || 'stripe'
 
-    if (!paymentConfig.publishableKey) return
+    if (activeProvider.value === 'stripe') {
+      await initializeStripe(cfg)
+    } else if (activeProvider.value === 'bolt') {
+      await initializeBolt(cfg)
+    }
+  } catch (_) {
+    // silent — payments just won't be offered
+  }
+}
+
+async function initializeStripe(cfg?: any) {
+  try {
+    const key = cfg?.providers?.stripe?.publishableKey || cfg?.publishableKey
+    if (!key) return
 
     const { loadStripe } = await import('@stripe/stripe-js')
-    const stripe = await loadStripe(paymentConfig.publishableKey)
+    const stripe = await loadStripe(key)
 
     if (stripe) {
       stripeInstance.value = stripe
       stripeReady.value = true
     }
   } catch (_) {
-    // silent — payments just won't be offered
+    // silent
+  }
+}
+
+async function initializeBolt(cfg?: any) {
+  try {
+    const cdnUrl = cfg?.providers?.bolt?.cdnUrl
+    if (!cdnUrl) return
+
+    // Load Bolt Connect script
+    await new Promise<void>((resolve, reject) => {
+      if (document.querySelector('script[src*="bolt.com/connect"]')) {
+        resolve()
+        return
+      }
+      const script = document.createElement('script')
+      script.src = `${cdnUrl}/connect.js`
+      script.async = true
+      script.onload = () => resolve()
+      script.onerror = () => reject(new Error('Failed to load Bolt script'))
+      document.head.appendChild(script)
+    })
+
+    boltReady.value = true
+  } catch (_) {
+    // silent
   }
 }
 
@@ -625,6 +695,77 @@ function cancelPayment() {
   showPaymentForm.value = false
   paymentElementReady.value = false
   stripeElements.value = null
+}
+
+// ── Bolt Payments ──
+
+async function handleBuyTokenBolt() {
+  if (!user.value) return
+
+  boltLoading.value = true
+  paymentError.value = null
+  paymentSuccess.value = false
+
+  try {
+    const res = await $fetch<any>(`${apiBase.value}/api/payments/bolt/order-token`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+
+    // Mock mode (Bolt not configured on server)
+    if (res.mock) {
+      credits.value.paidCredits = res.credits
+      credits.value.availablePlays = res.availablePlays
+      credits.value.freePlayUsed = true
+      creditUsed.value = false
+      paymentSuccess.value = true
+      setTimeout(() => { paymentSuccess.value = false }, 3000)
+      boltLoading.value = false
+      return
+    }
+
+    // Open Bolt checkout modal
+    const BoltCheckout = (window as any).BoltCheckout
+    if (!BoltCheckout) {
+      paymentError.value = 'Bolt checkout not loaded'
+      boltLoading.value = false
+      return
+    }
+
+    BoltCheckout.configure(
+      { orderToken: res.orderToken },
+      {},
+      {
+        success: () => {
+          paymentSuccess.value = true
+          creditUsed.value = false
+
+          // Poll credits until webhook adds the credit
+          let attempts = 0
+          const prevCredits = credits.value.availablePlays
+          const poll = setInterval(async () => {
+            attempts++
+            await fetchCredits()
+            if (credits.value.availablePlays > prevCredits || attempts >= 10) {
+              clearInterval(poll)
+            }
+          }, 1500)
+
+          setTimeout(() => { paymentSuccess.value = false }, 5000)
+        },
+        close: () => {
+          // User closed modal without completing
+        },
+        error: (err: any) => {
+          paymentError.value = err?.message || 'Bolt payment failed'
+        },
+      }
+    )
+  } catch (e: any) {
+    paymentError.value = e.data?.error || 'Failed to initialize Bolt checkout'
+  } finally {
+    boltLoading.value = false
+  }
 }
 
 // ── Dev credit ──

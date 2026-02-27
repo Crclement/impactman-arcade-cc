@@ -90,9 +90,44 @@ const tests = ref<TestItem[]>([
     if (!Array.isArray(res)) throw new Error('Expected array response')
   }),
 
-  makeTest('Payments Config', 'GET /api/payments/config — Returns Square config', async () => {
+  makeTest('Payments Config', 'GET /api/payments/config — Returns activeProvider + providers', async () => {
     const res = await $fetch<any>(`${apiBase}/api/payments/config`)
     if (typeof res !== 'object' || res === null) throw new Error('Expected object response')
+    if (!res.activeProvider) throw new Error('Missing activeProvider')
+    if (!['stripe', 'bolt'].includes(res.activeProvider)) throw new Error(`Invalid activeProvider: ${res.activeProvider}`)
+    if (!res.providers) throw new Error('Missing providers object')
+    if (!('stripe' in res.providers)) throw new Error('Missing providers.stripe')
+    if (!('bolt' in res.providers)) throw new Error('Missing providers.bolt')
+    if (!('environment' in res)) throw new Error('Missing environment field')
+  }),
+
+  makeTest('Bolt Order Token (no auth)', 'POST /api/payments/bolt/order-token — Expects 401', async () => {
+    try {
+      await $fetch(`${apiBase}/api/payments/bolt/order-token`, {
+        method: 'POST',
+      })
+      throw new Error('Expected 401 but request succeeded')
+    } catch (e: any) {
+      const status = e?.response?.status || e?.status || e?.statusCode
+      if (status === 401) return // pass
+      if (e.message === 'Expected 401 but request succeeded') throw e
+      throw new Error(`Expected 401, got ${status || e.message || 'unknown'}`)
+    }
+  }),
+
+  makeTest('Admin: Switch Provider (no auth)', 'POST /api/admin/payments/provider — Expects 401', async () => {
+    try {
+      await $fetch(`${apiBase}/api/admin/payments/provider`, {
+        method: 'POST',
+        body: { provider: 'stripe' },
+      })
+      throw new Error('Expected 401 but request succeeded')
+    } catch (e: any) {
+      const status = e?.response?.status || e?.status || e?.statusCode
+      if (status === 401) return // pass
+      if (e.message === 'Expected 401 but request succeeded') throw e
+      throw new Error(`Expected 401, got ${status || e.message || 'unknown'}`)
+    }
   }),
 
   makeTest('Auth: Reject No Token', 'POST /api/users/nobody/scores — Expects 401', async () => {
@@ -156,6 +191,21 @@ const tests = ref<TestItem[]>([
         reject(new Error('WebSocket connection failed'))
       }
     })
+  }),
+
+  makeTest('Console Reset', 'POST /api/consoles/TEST-001/reset — Clears stale login', async () => {
+    const res = await $fetch<any>(`${apiBase}/api/consoles/TEST-001/reset`, {
+      method: 'POST',
+    })
+    if (!res.success) throw new Error('Expected success=true')
+    // Verify login was cleared
+    const login = await $fetch<any>(`${apiBase}/api/consoles/TEST-001/logged-in-user`)
+    if (login.user) throw new Error('Expected null user after reset')
+  }),
+
+  makeTest('Console Total Bags', 'GET /api/consoles/IMP-001/total-bags — Returns totalBags number', async () => {
+    const res = await $fetch<any>(`${apiBase}/api/consoles/IMP-001/total-bags`)
+    if (typeof res.totalBags !== 'number') throw new Error(`Expected number, got ${typeof res.totalBags}`)
   }),
 
   makeTest('Console Status POST', 'POST /api/status — Mock heartbeat', async () => {

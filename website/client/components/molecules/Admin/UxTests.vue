@@ -289,7 +289,51 @@ const tests = ref<TestItem[]>([
     if (typeof res.availablePlays !== 'number') throw new Error('Expected availablePlays number')
   }),
 
-  // 17. Offline Queue
+  // 17. Bolt Order Token (authed)
+  makeTest('Bolt Order Token', 'POST /api/payments/bolt/order-token — Returns orderToken or mock', async () => {
+    if (!ctx.token) throw new Error('Login test must pass first')
+    const res = await $fetch<any>(`${apiBase}/api/payments/bolt/order-token`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ctx.token}` },
+    })
+    // Either mock mode (success+mock) or real token
+    if (res.mock) {
+      if (!res.success) throw new Error('Mock mode missing success=true')
+      if (typeof res.credits !== 'number') throw new Error('Mock mode missing credits')
+    } else {
+      if (!res.orderToken) throw new Error('Missing orderToken in response')
+    }
+  }),
+
+  // 18. Switch Provider (non-admin → 403)
+  makeTest('Switch Provider (non-admin)', 'POST /api/admin/payments/provider — Non-admin expects 403', async () => {
+    if (!ctx.token) throw new Error('Login test must pass first')
+    try {
+      await $fetch(`${apiBase}/api/admin/payments/provider`, {
+        method: 'POST',
+        body: { provider: 'bolt' },
+        headers: { Authorization: `Bearer ${ctx.token}` },
+      })
+      throw new Error('Expected 403 but request succeeded')
+    } catch (e: any) {
+      const status = e?.response?.status || e?.status
+      if (status === 403) return // expected — not admin
+      if (e.message === 'Expected 403 but request succeeded') throw e
+      throw new Error(`Expected 403, got ${status || e.message || 'unknown'}`)
+    }
+  }),
+
+  // 19. Payments Config Shape
+  makeTest('Payments Config Shape', 'GET /api/payments/config — activeProvider + providers object', async () => {
+    const res = await $fetch<any>(`${apiBase}/api/payments/config`)
+    if (!res.activeProvider) throw new Error('Missing activeProvider')
+    if (!res.providers?.stripe) throw new Error('Missing providers.stripe')
+    if (!res.providers?.bolt) throw new Error('Missing providers.bolt')
+    if (!('configured' in res.providers.stripe)) throw new Error('Missing stripe.configured')
+    if (!('configured' in res.providers.bolt)) throw new Error('Missing bolt.configured')
+  }),
+
+  // 20. Offline Queue
   makeTest('Offline Queue', 'Enqueue + dequeue via useOfflineQueue', async () => {
     const { enqueue, syncQueue } = useOfflineQueue()
 

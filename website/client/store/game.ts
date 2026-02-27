@@ -18,6 +18,7 @@ export interface GameStore {
   unityInstance?: any,
   loggedInUser: LoggedInUser | null,
   readyToPlay: boolean,
+  consoleTotalBags: number,
 }
 
 export interface GameScore {
@@ -52,6 +53,7 @@ export const useGameStore = defineStore('game', {
     allies: [],
     loggedInUser: null,
     readyToPlay: false,
+    consoleTotalBags: 0,
   }),
   actions: {
     loadUser() {
@@ -87,6 +89,16 @@ export const useGameStore = defineStore('game', {
         }))
       } catch {
         // silent — leaderboard will show empty
+      }
+    },
+    async fetchConsoleTotalBags(consoleId: string) {
+      try {
+        const config = useRuntimeConfig()
+        const apiBase = config.public.apiBase || 'http://localhost:3001'
+        const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId}/total-bags`)
+        this.consoleTotalBags = res.totalBags || 0
+      } catch {
+        // silent
       }
     },
     StartGame(){

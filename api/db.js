@@ -484,6 +484,7 @@ async function getLeaderboard(limit = 10) {
     `SELECT u.name, u.id as user_id, s.score, s.console_id, s.played_at
      FROM scores s
      JOIN users u ON s.user_id = u.id
+     WHERE u.email NOT LIKE '__test__%'
      ORDER BY s.score DESC
      LIMIT $1`,
     [limit]
@@ -496,6 +497,20 @@ async function getLeaderboard(limit = 10) {
     score: r.score,
     date: r.played_at,
   }));
+}
+
+// ============================================
+// CONSOLE LIFETIME STATS (from scores table)
+// ============================================
+
+async function getConsoleTotalBags(consoleId) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM(bags), 0) as total_bags
+     FROM scores
+     WHERE console_id = $1`,
+    [consoleId]
+  );
+  return parseInt(rows[0]?.total_bags || '0', 10);
 }
 
 // ============================================
@@ -610,6 +625,8 @@ module.exports = {
   getAllGameStats,
   // Leaderboard
   getLeaderboard,
+  // Console lifetime stats
+  getConsoleTotalBags,
   // Cleanup
   cleanupTestData,
 };

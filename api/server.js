@@ -6,8 +6,12 @@ const http = require('http');
 const WebSocket = require('ws');
 const { sendWelcomeEmail, sendScoreClaimedEmail } = require('./email');
 const { createPaymentIntent, verifyWebhook, getStripeConfig, PLAY_PRICE_CENTS } = require('./payments');
+const { createOrderToken, verifyBoltWebhook, getBoltConfig, PAYMENT_ENV } = require('./bolt');
 const db = require('./db');
 const { generateToken, authMiddleware, adminMiddleware } = require('./auth');
+
+// Active payment provider toggle (in-memory, default stripe)
+let activePaymentProvider = 'stripe';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,7 +24,19 @@ const wss = new WebSocket.Server({ server });
 const connectedConsoles = new Map();
 
 // Console login sessions (consoleId -> { user, loggedInAt }) — ephemeral per-session
+// Entries auto-expire after LOGIN_TTL_MS
 const consoleLogins = new Map();
+const LOGIN_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function getConsoleLogin(consoleId) {
+  const entry = consoleLogins.get(consoleId);
+  if (!entry) return null;
+  if (Date.now() - new Date(entry.loggedInAt).getTime() > LOGIN_TTL_MS) {
+    consoleLogins.delete(consoleId);
+    return null;
+  }
+  return entry;
+}
 
 // Pending game starts (consoleId -> { userId, expiresAt }) — ephemeral, expires in 5 min
 const pendingGameStarts = new Map();
@@ -51,6 +67,35 @@ app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), asy
         console.log(`[Payments] Webhook: credit added for ${userId} (${intent.id}), now has ${newCredits} credits`);
       } catch (e) {
         console.error('[Payments] Webhook: failed to add credit:', e);
+      }
+    }
+  }
+
+  res.json({ received: true });
+});
+
+// Bolt webhook needs raw body — must be registered BEFORE express.json()
+app.post('/api/payments/bolt/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  let event;
+  try {
+    event = verifyBoltWebhook(req.body.toString(), req.headers);
+  } catch (err) {
+    console.error('[Bolt] Webhook signature verification failed:', err.message);
+    return res.status(400).json({ error: 'Invalid signature' });
+  }
+
+  const type = event.type || event.event;
+  if (type === 'payment' || type === 'payment.completed') {
+    const userId = event.reference || event.order?.cart?.order_reference?.split('_')[1];
+
+    if (userId) {
+      try {
+        const newCredits = await db.addCredit(userId);
+        const txnId = event.transaction_id || event.id || `bolt_${Date.now()}`;
+        await db.addPayment(userId, txnId, 1.00);
+        console.log(`[Bolt] Webhook: credit added for ${userId} (${txnId}), now has ${newCredits} credits`);
+      } catch (e) {
+        console.error('[Bolt] Webhook: failed to add credit:', e);
       }
     }
   }
@@ -635,13 +680,29 @@ app.post('/api/users/:id/scores', authMiddleware, async (req, res) => {
 // PAYMENT ENDPOINTS (Stripe Payment Element)
 // ============================================
 
-// Get Stripe publishable key for frontend
+// Get payment config for frontend (active provider + all provider keys)
 app.get('/api/payments/config', (req, res) => {
-  const config = getStripeConfig();
+  const stripeConfig = getStripeConfig();
+  const boltConfig = getBoltConfig();
+
   res.json({
-    ...config,
+    environment: PAYMENT_ENV,
+    activeProvider: activePaymentProvider,
     pricePerPlay: PLAY_PRICE_CENTS / 100,
     currency: 'USD',
+    // Legacy field for backwards compat
+    publishableKey: stripeConfig.publishableKey,
+    providers: {
+      stripe: {
+        configured: !!stripeConfig.publishableKey,
+        publishableKey: stripeConfig.publishableKey,
+      },
+      bolt: {
+        configured: !!boltConfig.publishableKey,
+        publishableKey: boltConfig.publishableKey,
+        cdnUrl: boltConfig.cdnUrl,
+      },
+    },
   });
 });
 
@@ -706,6 +767,40 @@ app.post('/api/payments/create-intent', authMiddleware, async (req, res) => {
     });
   } catch (e) {
     console.error('[API] Error creating PaymentIntent:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Create Bolt order token
+app.post('/api/payments/bolt/order-token', authMiddleware, async (req, res) => {
+  try {
+    const userRow = await db.findUserById(req.userId);
+    if (!userRow) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const result = await createOrderToken(req.userId, userRow.email);
+
+    if (result.mock) {
+      // Bolt not configured — add credit directly (dev mode)
+      const newCredits = await db.addCredit(req.userId);
+      await db.addPayment(req.userId, `mock_bolt_${Date.now()}`, 1.00);
+      const credits = await db.getCredits(req.userId);
+
+      console.log(`[${new Date().toISOString()}] Mock Bolt payment: ${userRow.email} now has ${newCredits} credits`);
+
+      return res.json({
+        success: true,
+        mock: true,
+        credits: newCredits,
+        availablePlays: credits.freePlayUsed ? newCredits : newCredits + 1,
+      });
+    }
+
+    console.log(`[${new Date().toISOString()}] Bolt order token created for ${userRow.email}`);
+    res.json({ orderToken: result.orderToken });
+  } catch (e) {
+    console.error('[API] Error creating Bolt order token:', e);
     res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -961,8 +1056,17 @@ app.post('/api/consoles/:consoleId/login', async (req, res) => {
 
 // Get logged-in user for a console (arcade polls this)
 app.get('/api/consoles/:consoleId/logged-in-user', (req, res) => {
-  const login = consoleLogins.get(req.params.consoleId);
+  const login = getConsoleLogin(req.params.consoleId);
   res.json({ user: login?.user || null });
+});
+
+// Reset console session (arcade calls this on page load to clear stale logins)
+app.post('/api/consoles/:consoleId/reset', (req, res) => {
+  const { consoleId } = req.params;
+  consoleLogins.delete(consoleId);
+  pendingGameStarts.delete(consoleId);
+  console.log(`[Console] Reset: ${consoleId} — cleared stale login + pending game`);
+  res.json({ success: true });
 });
 
 // Clear logged-in user from console (called when returning to menu)
@@ -1100,6 +1204,17 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// Get console lifetime total bags (sum of all scores ever played on this console)
+app.get('/api/consoles/:consoleId/total-bags', async (req, res) => {
+  try {
+    const totalBags = await db.getConsoleTotalBags(req.params.consoleId);
+    res.json({ consoleId: req.params.consoleId, totalBags });
+  } catch (e) {
+    console.error('[API] Error getting console total bags:', e);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
 // Get global leaderboard
 app.get('/api/leaderboard', async (req, res) => {
   try {
@@ -1184,6 +1299,19 @@ const requireAdmin = [authMiddleware, adminMiddleware(db)];
 // Verify admin access (used by frontend middleware)
 app.get('/api/admin/verify', requireAdmin, (req, res) => {
   res.json({ success: true });
+});
+
+// Switch active payment provider (admin only)
+app.post('/api/admin/payments/provider', requireAdmin, (req, res) => {
+  const { provider } = req.body;
+
+  if (!provider || !['stripe', 'bolt'].includes(provider)) {
+    return res.status(400).json({ error: 'provider must be "stripe" or "bolt"' });
+  }
+
+  activePaymentProvider = provider;
+  console.log(`[Admin] Active payment provider switched to: ${provider}`);
+  res.json({ success: true, activeProvider: activePaymentProvider });
 });
 
 // Cleanup test data

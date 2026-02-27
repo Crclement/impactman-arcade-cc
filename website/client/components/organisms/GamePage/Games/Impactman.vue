@@ -154,9 +154,11 @@ onMounted(() => {
       'background: #16114F; color: #D9FF69; font-size: 11px; padding: 3px 8px; border-radius: 2px;'
     )
 
-    // Clear any stale user from localStorage — arcade starts fresh on every load.
-    // The login poll + WebSocket will pick up the active user from the API.
+    // Clear any stale user — both locally AND on the API server.
+    // Without the server reset, the login poll would immediately restore a stale user.
     store.clearUser()
+    store.readyToPlay = false
+    $fetch(`${apiBase}/api/consoles/${consoleId.value}/reset`, { method: 'POST' }).catch(() => {})
 
     // Persist console ID to localStorage for other pages
     localStorage.setItem('consoleId', consoleId.value)

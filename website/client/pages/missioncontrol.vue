@@ -26,6 +26,7 @@
       <MoleculesAdminSystemTests v-if="activeTab === 'system'" />
       <MoleculesAdminUxTests v-else-if="activeTab === 'ux'" />
       <MoleculesAdminDocTests v-else-if="activeTab === 'docs'" />
+      <MoleculesAdminPayments v-else-if="activeTab === 'payments'" />
 
       <!-- Fleet UI Tab (inline) -->
       <div v-else-if="activeTab === 'fleet'">
@@ -104,6 +105,7 @@ const tabs = [
   { id: 'ux', label: 'UX Tests' },
   { id: 'docs', label: 'Doc Fact-Check' },
   { id: 'fleet', label: 'Fleet UI' },
+  { id: 'payments', label: 'Payments' },
 ]
 
 const activeTab = ref('system')
