@@ -5,7 +5,7 @@ const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 const { sendWelcomeEmail, sendScoreClaimedEmail } = require('./email');
-const { createPayment, getSquareConfig, PLAY_PRICE_CENTS } = require('./payments');
+const { createPaymentIntent, verifyWebhook, getStripeConfig, PLAY_PRICE_CENTS } = require('./payments');
 const db = require('./db');
 const { generateToken, authMiddleware, adminMiddleware } = require('./auth');
 
@@ -26,6 +26,38 @@ const consoleLogins = new Map();
 const pendingGameStarts = new Map();
 
 app.use(cors());
+
+// Stripe webhook needs raw body — must be registered BEFORE express.json()
+app.post('/api/payments/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const signature = req.headers['stripe-signature'];
+
+  let event;
+  try {
+    event = verifyWebhook(req.body, signature);
+  } catch (err) {
+    console.error('[Payments] Webhook signature verification failed:', err.message);
+    return res.status(400).json({ error: 'Invalid signature' });
+  }
+
+  if (event.type === 'payment_intent.succeeded') {
+    const intent = event.data.object;
+    const userId = intent.metadata?.userId;
+
+    if (userId) {
+      try {
+        const newCredits = await db.addCredit(userId);
+        await db.addPayment(userId, intent.id, intent.amount / 100);
+
+        console.log(`[Payments] Webhook: credit added for ${userId} (${intent.id}), now has ${newCredits} credits`);
+      } catch (e) {
+        console.error('[Payments] Webhook: failed to add credit:', e);
+      }
+    }
+  }
+
+  res.json({ received: true });
+});
+
 app.use(express.json());
 
 // Serve static files from website/client/public
@@ -600,12 +632,12 @@ app.post('/api/users/:id/scores', authMiddleware, async (req, res) => {
 });
 
 // ============================================
-// PAYMENT ENDPOINTS (Apple Pay via Square)
+// PAYMENT ENDPOINTS (Stripe Payment Element)
 // ============================================
 
-// Get Square configuration for frontend
+// Get Stripe publishable key for frontend
 app.get('/api/payments/config', (req, res) => {
-  const config = getSquareConfig();
+  const config = getStripeConfig();
   res.json({
     ...config,
     pricePerPlay: PLAY_PRICE_CENTS / 100,
@@ -641,43 +673,39 @@ app.get('/api/users/:id/credits', async (req, res) => {
   }
 });
 
-// Process Apple Pay payment
-app.post('/api/payments/apple-pay', authMiddleware, async (req, res) => {
-  const { userId, sourceId } = req.body;
-
-  if (!userId || !sourceId) {
-    return res.status(400).json({ error: 'userId and sourceId required' });
-  }
-
+// Create a Stripe PaymentIntent
+app.post('/api/payments/create-intent', authMiddleware, async (req, res) => {
   try {
-    const userRow = await db.findUserById(userId);
+    const userRow = await db.findUserById(req.userId);
     if (!userRow) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const result = await createPayment(sourceId, userId, userRow.email);
+    const result = await createPaymentIntent(req.userId, userRow.email);
 
-    if (!result.success) {
-      return res.status(400).json({ error: result.error || 'Payment failed' });
+    if (result.mock) {
+      // Stripe not configured — add credit directly (dev mode)
+      const newCredits = await db.addCredit(req.userId);
+      await db.addPayment(req.userId, `mock_${Date.now()}`, PLAY_PRICE_CENTS / 100);
+      const credits = await db.getCredits(req.userId);
+
+      console.log(`[${new Date().toISOString()}] Mock payment: ${userRow.email} now has ${newCredits} credits`);
+
+      return res.json({
+        success: true,
+        mock: true,
+        credits: newCredits,
+        availablePlays: credits.freePlayUsed ? newCredits : newCredits + 1,
+      });
     }
 
-    // Add credit and payment record
-    const newCredits = await db.addCredit(userId);
-    await db.addPayment(userId, result.paymentId, PLAY_PRICE_CENTS / 100, result.receiptUrl);
-
-    const credits = await db.getCredits(userId);
-
-    console.log(`[${new Date().toISOString()}] Payment processed: ${userRow.email} now has ${newCredits} credits`);
+    console.log(`[${new Date().toISOString()}] PaymentIntent created for ${userRow.email}`);
 
     res.json({
-      success: true,
-      paymentId: result.paymentId,
-      receiptUrl: result.receiptUrl,
-      credits: newCredits,
-      availablePlays: credits.freePlayUsed ? newCredits : newCredits + 1,
+      clientSecret: result.clientSecret,
     });
   } catch (e) {
-    console.error('[API] Error processing payment:', e);
+    console.error('[API] Error creating PaymentIntent:', e);
     res.status(500).json({ error: 'Internal error' });
   }
 });

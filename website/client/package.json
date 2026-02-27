@@ -15,6 +15,7 @@
     "sass": "^1.56.1"
   },
   "dependencies": {
+    "@stripe/stripe-js": "^5.5.0",
     "@headlessui/vue": "^0.0.0-insiders.4da0b3a",
     "@mailchimp/mailchimp_marketing": "^3.0.78",
     "@pinia/nuxt": "^0.4.6",

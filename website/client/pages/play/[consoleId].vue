@@ -129,37 +129,34 @@
         <div class="bg-white/5 rounded-2xl p-4 mb-5 border border-white/10">
           <p class="text-white/50 text-xs font-bold uppercase mb-3 text-center">Add Tokens</p>
 
-          <!-- Apple Pay -->
-          <div v-if="paymentLoading" class="flex justify-center py-3">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D9FF69]"></div>
-          </div>
-          <div v-else-if="applePaySupported" id="apple-pay-button" class="apple-pay-button-container mb-3"></div>
-
-          <!-- Square Card payment -->
+          <!-- Buy Token button (reveals Stripe Payment Element) -->
           <button
-            v-if="!showCardForm && squareReady"
-            @click="revealCardForm"
-            class="w-full bg-white text-[#16114F] py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mb-3 border border-white/20"
+            v-if="!showPaymentForm && stripeReady"
+            @click="handleBuyToken"
+            :disabled="paymentLoading"
+            class="w-full bg-white text-[#16114F] py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mb-3 border border-white/20 disabled:opacity-50"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-            Buy Token — $1
+            {{ paymentLoading ? 'Loading...' : 'Buy Token — $1' }}
           </button>
-          <div v-if="showCardForm" class="mb-3">
+
+          <!-- Stripe Payment Element (inline) -->
+          <div v-if="showPaymentForm" class="mb-3">
             <div class="flex items-center justify-between mb-2">
               <div class="flex items-center gap-1.5">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00DC82" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span class="text-white/40 text-[10px]">Secured by Square</span>
+                <span class="text-white/40 text-[10px]">Secured by Stripe</span>
               </div>
-              <button @click="showCardForm = false" class="text-white/30 text-xs hover:text-white/50">Cancel</button>
+              <button @click="cancelPayment" class="text-white/30 text-xs hover:text-white/50">Cancel</button>
             </div>
-            <div id="card-container" class="mb-3 bg-white rounded-lg p-1"></div>
+            <div id="payment-element" class="mb-3"></div>
             <button
-              v-if="cardReady"
-              @click="handleCardPayment"
-              :disabled="cardPaymentLoading"
+              v-if="paymentElementReady"
+              @click="confirmPayment"
+              :disabled="paymentProcessing"
               class="w-full bg-gradient-to-r from-[#D9FF69] to-[#00DC82] text-[#16114F] py-4 rounded-xl font-bold text-lg transition disabled:opacity-50"
             >
-              {{ cardPaymentLoading ? 'Processing...' : 'Pay $1' }}
+              {{ paymentProcessing ? 'Processing...' : 'Pay $1' }}
             </button>
           </div>
 
@@ -260,20 +257,16 @@ const starting = ref(false)
 const gameError = ref<string | null>(null)
 const creditUsed = ref(false)
 
-// Apple Pay
-const applePaySupported = ref(false)
+// Stripe payments
+const stripeReady = ref(false)
+const stripeInstance = ref<any>(null)
+const stripeElements = ref<any>(null)
+const showPaymentForm = ref(false)
+const paymentElementReady = ref(false)
 const paymentLoading = ref(false)
+const paymentProcessing = ref(false)
 const paymentError = ref<string | null>(null)
 const paymentSuccess = ref(false)
-const squarePayments = ref<any>(null)
-const applePay = ref<any>(null)
-
-// Square Card
-const squareReady = ref(false)
-const showCardForm = ref(false)
-const cardReady = ref(false)
-const cardInstance = ref<any>(null)
-const cardPaymentLoading = ref(false)
 
 // Dev credit
 const devCreditLoading = ref(false)
@@ -355,7 +348,7 @@ onMounted(async () => {
     // If loadDashboardData triggered signOut (stale user), stay on login
     if (!user.value) return
     state.value = 'dashboard'
-    if (process.client) await initializeApplePay()
+    if (process.client) await initializeStripe()
   } else {
     state.value = 'login'
   }
@@ -421,7 +414,7 @@ async function handleLogin() {
     // Fetch dashboard data then transition
     await loadDashboardData()
     state.value = 'dashboard'
-    if (process.client) await initializeApplePay()
+    if (process.client) await initializeStripe()
   } catch (e: any) {
     loginError.value = e.data?.error || 'Failed to login. Please try again.'
   } finally {
@@ -505,169 +498,133 @@ async function startGame() {
   }
 }
 
-// ── Square Payments (Apple Pay + Card) ──
+// ── Stripe Payments ──
 
-async function initializeApplePay() {
+async function initializeStripe() {
   try {
     const paymentConfig = await $fetch<any>(`${apiBase.value}/api/payments/config`)
 
-    if (!paymentConfig.applicationId) return
+    if (!paymentConfig.publishableKey) return
 
-    if (!(window as any).Square) {
-      const script = document.createElement('script')
-      script.src = paymentConfig.environment === 'production'
-        ? 'https://web.squarecdn.com/v1/square.js'
-        : 'https://sandbox.web.squarecdn.com/v1/square.js'
-      script.onload = () => setupPayments(paymentConfig)
-      document.head.appendChild(script)
-    } else {
-      await setupPayments(paymentConfig)
+    const { loadStripe } = await import('@stripe/stripe-js')
+    const stripe = await loadStripe(paymentConfig.publishableKey)
+
+    if (stripe) {
+      stripeInstance.value = stripe
+      stripeReady.value = true
     }
   } catch (_) {
     // silent — payments just won't be offered
   }
 }
 
-async function setupPayments(paymentConfig: any) {
-  const payments = (window as any).Square.payments(
-    paymentConfig.applicationId,
-    paymentConfig.locationId
-  )
-  squarePayments.value = payments
-
-  // Apple Pay (may not be supported on all devices)
-  try {
-    const applePayInstance = await payments.applePay({
-      countryCode: 'US',
-      currencyCode: 'USD',
-      total: {
-        amount: '1.00',
-        label: 'Impact Arcade Play Token',
-      },
-    })
-
-    if (applePayInstance) {
-      applePay.value = applePayInstance
-      applePaySupported.value = true
-
-      await nextTick()
-      const container = document.getElementById('apple-pay-button')
-      if (container) {
-        container.innerHTML = ''
-        const button = document.createElement('div')
-        button.className = 'apple-pay-button apple-pay-button-black'
-        button.style.cssText = 'width: 100%; height: 48px; cursor: pointer; border-radius: 8px;'
-        button.onclick = handleApplePayClick
-        container.appendChild(button)
-      }
-    }
-  } catch (_) {
-    applePaySupported.value = false
-  }
-
-  // Mark Square SDK as ready — card form attaches on user click
-  squareReady.value = true
-}
-
-async function handleApplePayClick() {
-  if (!applePay.value || !user.value) return
+async function handleBuyToken() {
+  if (!stripeInstance.value || !user.value) return
 
   paymentLoading.value = true
   paymentError.value = null
   paymentSuccess.value = false
 
   try {
-    const tokenResult = await applePay.value.tokenize()
+    const res = await $fetch<any>(`${apiBase.value}/api/payments/create-intent`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
 
-    if (tokenResult.status === 'OK') {
-      const result = await $fetch<any>(`${apiBase.value}/api/payments/apple-pay`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: {
-          userId: user.value.id,
-          sourceId: tokenResult.token,
-        },
-      })
-
-      if (result.success) {
-        paymentSuccess.value = true
-        credits.value.paidCredits = result.credits
-        credits.value.availablePlays = result.availablePlays
-
-        setTimeout(() => {
-          paymentSuccess.value = false
-        }, 3000)
-      } else {
-        paymentError.value = result.error || 'Payment failed'
-      }
-    } else {
-      paymentError.value = tokenResult.errors?.[0]?.message || 'Payment cancelled'
+    // Mock mode (Stripe not configured on server)
+    if (res.mock) {
+      credits.value.paidCredits = res.credits
+      credits.value.availablePlays = res.availablePlays
+      credits.value.freePlayUsed = true
+      creditUsed.value = false
+      paymentSuccess.value = true
+      setTimeout(() => { paymentSuccess.value = false }, 3000)
+      paymentLoading.value = false
+      return
     }
+
+    // Mount Payment Element
+    const elements = stripeInstance.value.elements({
+      clientSecret: res.clientSecret,
+      appearance: {
+        theme: 'night',
+        variables: {
+          colorPrimary: '#D9FF69',
+          colorBackground: '#1e1a5c',
+          colorText: '#ffffff',
+          borderRadius: '12px',
+        },
+      },
+    })
+
+    stripeElements.value = elements
+
+    const paymentElement = elements.create('payment', {
+      layout: 'tabs',
+    })
+
+    showPaymentForm.value = true
+    await nextTick()
+
+    paymentElement.mount('#payment-element')
+
+    paymentElement.on('ready', () => {
+      paymentElementReady.value = true
+    })
   } catch (e: any) {
-    paymentError.value = e.data?.error || 'Payment failed'
+    paymentError.value = e.data?.error || 'Failed to initialize payment'
   } finally {
     paymentLoading.value = false
   }
 }
 
-// ── Card payment ──
+async function confirmPayment() {
+  if (!stripeInstance.value || !stripeElements.value) return
 
-async function revealCardForm() {
-  showCardForm.value = true
-  if (cardInstance.value) return // Already initialized
-
-  await nextTick()
-  try {
-    const card = await squarePayments.value.card()
-    await nextTick()
-    await card.attach('#card-container')
-    cardInstance.value = card
-    cardReady.value = true
-  } catch (_) {
-    showCardForm.value = false
-  }
-}
-
-async function handleCardPayment() {
-  if (!cardInstance.value || !user.value) return
-
-  cardPaymentLoading.value = true
+  paymentProcessing.value = true
   paymentError.value = null
-  paymentSuccess.value = false
 
   try {
-    const tokenResult = await cardInstance.value.tokenize()
+    const { error } = await stripeInstance.value.confirmPayment({
+      elements: stripeElements.value,
+      redirect: 'if_required',
+    })
 
-    if (tokenResult.status === 'OK') {
-      const result = await $fetch<any>(`${apiBase.value}/api/payments/apple-pay`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: {
-          userId: user.value.id,
-          sourceId: tokenResult.token,
-        },
-      })
-
-      if (result.success) {
-        paymentSuccess.value = true
-        credits.value.paidCredits = result.credits
-        credits.value.availablePlays = result.availablePlays
-        creditUsed.value = false // Reset so Use Token button reappears
-
-        setTimeout(() => {
-          paymentSuccess.value = false
-        }, 3000)
-      } else {
-        paymentError.value = result.error || 'Payment failed'
-      }
+    if (error) {
+      paymentError.value = error.message || 'Payment failed'
     } else {
-      paymentError.value = tokenResult.errors?.[0]?.message || 'Payment failed'
+      // Payment succeeded — poll for credit to appear (webhook adds it)
+      showPaymentForm.value = false
+      paymentElementReady.value = false
+      stripeElements.value = null
+
+      paymentSuccess.value = true
+      creditUsed.value = false
+
+      // Poll credits until the webhook adds the credit
+      let attempts = 0
+      const prevCredits = credits.value.availablePlays
+      const poll = setInterval(async () => {
+        attempts++
+        await fetchCredits()
+        if (credits.value.availablePlays > prevCredits || attempts >= 10) {
+          clearInterval(poll)
+        }
+      }, 1500)
+
+      setTimeout(() => { paymentSuccess.value = false }, 5000)
     }
   } catch (e: any) {
     paymentError.value = e.data?.error || 'Payment failed'
   } finally {
-    cardPaymentLoading.value = false
+    paymentProcessing.value = false
   }
+}
+
+function cancelPayment() {
+  showPaymentForm.value = false
+  paymentElementReady.value = false
+  stripeElements.value = null
 }
 
 // ── Dev credit ──
@@ -765,13 +722,4 @@ function signOut() {
   }
 }
 
-.apple-pay-button {
-  -webkit-appearance: -apple-pay-button;
-  -apple-pay-button-type: buy;
-  -apple-pay-button-style: black;
-}
-
-.apple-pay-button-container {
-  min-height: 48px;
-}
 </style>
