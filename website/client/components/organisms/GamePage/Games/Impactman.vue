@@ -25,8 +25,18 @@
     <div v-if="store.global.gameScreen === 'menu'"
       class="absolute left-1/2 -translate-x-1/2 bottom-8 flex flex-col items-center">
 
-      <!-- STATE A: No user logged in — big QR -->
-      <template v-if="!store.loggedInUser">
+      <!-- ONLINE MODE: Direct play (web browser, no arcade console) -->
+      <template v-if="isOnlineMode">
+        <button
+          @click="() => store.StartGame()"
+          class="button-play button-flash font-retro uppercase py-3 px-12 border-4 border-[#16114F] text-4xl bg-purple text-center rounded-xl">
+          <span class="text-play">Play</span>
+        </button>
+        <p class="text-white/50 text-xs mt-2">Playing online</p>
+      </template>
+
+      <!-- ARCADE: STATE A: No user logged in — big QR -->
+      <template v-else-if="!store.loggedInUser">
         <div class="flex flex-col items-center">
           <div class="bg-white/95 rounded-xl p-3 shadow-lg">
             <img :src="loginQrUrl" alt="Scan to Play" class="w-32 h-32 rounded" />
@@ -36,7 +46,7 @@
         </div>
       </template>
 
-      <!-- STATE B: User logged in, no token used yet -->
+      <!-- ARCADE: STATE B: User logged in, no token used yet -->
       <template v-else-if="!store.readyToPlay">
         <div class="logged-in-badge bg-[#D9FF69] rounded-lg px-5 py-2 mb-3 shadow-lg text-center border-2 border-[#16114F]">
           <p class="text-[#16114F] font-bold text-sm">Welcome back, {{ store.loggedInUser.name }}!</p>
@@ -56,7 +66,7 @@
         </button>
       </template>
 
-      <!-- STATE C: User logged in, ready to play -->
+      <!-- ARCADE: STATE C: User logged in, ready to play -->
       <template v-else>
         <div class="logged-in-badge bg-[#D9FF69] rounded-lg px-5 py-2 mb-3 shadow-lg text-center border-2 border-[#16114F]">
           <p class="text-[#16114F] font-bold text-sm">Welcome back, {{ store.loggedInUser.name }}!</p>
@@ -102,13 +112,16 @@ const route = useRoute()
 
 // Console identification — prefer URL param, then localStorage, then default
 const consoleId = ref(process.client
-  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'IMP-001')
-  : 'IMP-001')
+  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'ONLINE')
+  : 'ONLINE')
 const raspiId = ref(process.client
-  ? ((route.query.raspi as string) || localStorage.getItem('raspiId') || 'RPI-001')
-  : 'RPI-001')
+  ? ((route.query.raspi as string) || localStorage.getItem('raspiId') || null)
+  : null)
 
 const apiBase = config.public.apiBase || 'http://localhost:3001'
+
+// Online mode: playing via web browser, not on a physical arcade console
+const isOnlineMode = computed(() => consoleId.value === 'ONLINE')
 
 // Login QR URL - links to unified play page
 const loginQrUrl = computed(() => {
@@ -154,18 +167,9 @@ onMounted(() => {
       'background: #16114F; color: #D9FF69; font-size: 11px; padding: 3px 8px; border-radius: 2px;'
     )
 
-    // Clear any stale user — both locally AND on the API server.
-    // Without the server reset, the login poll would immediately restore a stale user.
-    store.clearUser()
-    store.readyToPlay = false
-    $fetch(`${apiBase}/api/consoles/${consoleId.value}/reset`, { method: 'POST' }).catch(() => {})
-
     // Persist console ID to localStorage for other pages
     localStorage.setItem('consoleId', consoleId.value)
-    localStorage.setItem('raspiId', raspiId.value)
-
-    // Connect to WebSocket as this console
-    connect(consoleId.value)
+    if (raspiId.value) localStorage.setItem('raspiId', raspiId.value)
 
     // Add keyboard listener for arcade controls
     window.addEventListener('keydown', handleKeydown)
@@ -184,41 +188,54 @@ onMounted(() => {
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
 
-    // Poll for logged-in user as fallback (in case WebSocket doesn't connect)
-    const loginPollInterval = setInterval(async () => {
-      // Only poll when no user is logged in and on the menu screen
-      if (!store.loggedInUser && store.global.gameScreen === 'menu') {
-        try {
-          const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`)
-          if (res.user) {
-            store.loggedInUser = res.user
-          }
-        } catch (e) {
-          // Silently fail — WebSocket is the primary mechanism
-        }
-      }
-    }, 3000)
+    // Console-specific setup (skip for online/web players)
+    let loginPollInterval: ReturnType<typeof setInterval> | null = null
+    let pendingGamePollInterval: ReturnType<typeof setInterval> | null = null
 
-    // Poll for pending game (readyToPlay) as fallback when WebSocket is down
-    const pendingGamePollInterval = setInterval(async () => {
-      if (store.readyToPlay || store.global.gameScreen !== 'menu') return
-      if (!store.loggedInUser) return
-      try {
-        const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
-        if (res.pending) {
-          store.readyToPlay = true
+    if (!isOnlineMode.value) {
+      // Clear any stale user — both locally AND on the API server.
+      store.clearUser()
+      store.readyToPlay = false
+      $fetch(`${apiBase}/api/consoles/${consoleId.value}/reset`, { method: 'POST' }).catch(() => {})
+
+      // Connect to WebSocket as this console
+      connect(consoleId.value)
+
+      // Poll for logged-in user as fallback (in case WebSocket doesn't connect)
+      loginPollInterval = setInterval(async () => {
+        if (!store.loggedInUser && store.global.gameScreen === 'menu') {
+          try {
+            const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`)
+            if (res.user) {
+              store.loggedInUser = res.user
+            }
+          } catch (e) {
+            // Silently fail — WebSocket is the primary mechanism
+          }
         }
-      } catch (_) {}
-    }, 3000)
+      }, 3000)
+
+      // Poll for pending game (readyToPlay) as fallback when WebSocket is down
+      pendingGamePollInterval = setInterval(async () => {
+        if (store.readyToPlay || store.global.gameScreen !== 'menu') return
+        if (!store.loggedInUser) return
+        try {
+          const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
+          if (res.pending) {
+            store.readyToPlay = true
+          }
+        } catch (_) {}
+      }, 3000)
+    }
 
     onUnmounted(() => {
       window.removeEventListener('keydown', handleKeydown)
       window.removeEventListener('online', onOnline)
       window.removeEventListener('offline', onOffline)
       clearInterval(focusInterval)
-      clearInterval(loginPollInterval)
-      clearInterval(pendingGamePollInterval)
-      disconnect()
+      if (loginPollInterval) clearInterval(loginPollInterval)
+      if (pendingGamePollInterval) clearInterval(pendingGamePollInterval)
+      if (!isOnlineMode.value) disconnect()
     })
   }
 })

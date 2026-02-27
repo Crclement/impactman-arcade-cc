@@ -33,10 +33,10 @@ const route = useRoute()
 const config = useRuntimeConfig()
 const { enqueue, startAutoSync } = useOfflineQueue()
 
-// Console identification
+// Console identification — defaults to 'ONLINE' for web players (no physical console)
 const consoleId = process.client
-  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'IMP-001')
-  : 'IMP-001'
+  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'ONLINE')
+  : 'ONLINE'
 
 const apiBase = config.public.apiBase || 'http://localhost:3001'
 
@@ -57,32 +57,45 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
     gameStore.unityInstance?.Quit()
 
     // Save score in background, then reload to return to home screen
+    const scoreData = {
+      consoleId,
+      raspiId: process.client ? (localStorage.getItem('raspiId') || null) : null,
+      score: gameStore.global.currentScore,
+      level: gameStore.global.currentLevel,
+      bags: gameStore.global.currentBags,
+      plasticRemoved: gameStore.global.currentBags * 0.1,
+    }
+
     if (gameStore.loggedInUser) {
+      // Logged-in user: save score to their account
       const userId = gameStore.loggedInUser.id
       const token = process.client ? localStorage.getItem('impactarcade_token') : null
       const headers = token ? { Authorization: `Bearer ${token}` } : {}
-      const scoreBody = {
-        consoleId,
-        raspiId: process.client ? (localStorage.getItem('raspiId') || 'RPI-001') : 'RPI-001',
-        score: gameStore.global.currentScore,
-        level: gameStore.global.currentLevel,
-        bags: gameStore.global.currentBags,
-        plasticRemoved: gameStore.global.currentBags * 0.1,
-      }
 
       try {
-        // Try saving with a 3s timeout so we don't block the reload
         await Promise.race([
           $fetch(`${apiBase}/api/users/${userId}/scores`, {
             method: 'POST',
             headers,
-            body: scoreBody,
+            body: scoreData,
           }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
         ])
       } catch {
-        // Enqueue for offline sync (persists to localStorage, will retry on next load)
-        enqueue(`${apiBase}/api/users/${userId}/scores`, 'POST', scoreBody, headers)
+        enqueue(`${apiBase}/api/users/${userId}/scores`, 'POST', scoreData, headers)
+      }
+    } else {
+      // Guest: create a session so the score is still stored on the server
+      try {
+        await Promise.race([
+          $fetch(`${apiBase}/api/sessions`, {
+            method: 'POST',
+            body: scoreData,
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ])
+      } catch {
+        enqueue(`${apiBase}/api/sessions`, 'POST', scoreData, {})
       }
     }
 
