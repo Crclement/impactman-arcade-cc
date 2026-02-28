@@ -116,7 +116,7 @@ onBeforeMount(() => {
   })
 })
 
-const UNITY_LOAD_TIMEOUT = 60_000 // 60 seconds
+const UNITY_LOAD_TIMEOUT = 300_000 // 5 minutes — Pi needs time to compile WASM
 
 const loadUnityGame = async () => {
   var meta = document.createElement('meta');
