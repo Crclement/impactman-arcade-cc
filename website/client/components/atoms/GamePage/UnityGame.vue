@@ -82,6 +82,7 @@ useHead({
       src: '/unity/impactman/Build/impactman.loader.js',
       body: true,
       onload: () => {
+        console.log('[Unity] loader.js onload fired, createUnityInstance available:', typeof createUnityInstance)
         loadUnityGame()
       }
     }
@@ -122,13 +123,27 @@ const loadUnityGame = async () => {
   if (unityLoading) return
   unityLoading = true
 
+  console.log('[Unity] loadUnityGame() called')
+
   var meta = document.createElement('meta');
   meta.name = 'viewport';
   meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
   document.getElementsByTagName('head')[0].appendChild(meta);
 
+  const canvas = document.querySelector("#unity-canvas") as HTMLCanvasElement | null
+  console.log('[Unity] Canvas element:', canvas ? `${canvas.width}x${canvas.height}` : 'NOT FOUND')
+
+  if (!canvas) {
+    console.error('[Unity] Canvas not found, aborting')
+    gameStore.$patch({ global: { gameScreen: 'menu' } })
+    return
+  }
+
   try {
-    const unity = await createUnityInstance(document.querySelector("#unity-canvas"), {
+    console.log('[Unity] Calling createUnityInstance...')
+    const startTime = performance.now()
+
+    const unity = await createUnityInstance(canvas, {
       dataUrl: "/unity/impactman/Build/impactman.data",
       frameworkUrl: "/unity/impactman/Build/impactman.framework.js",
       codeUrl: "/unity/impactman/Build/impactman.wasm",
@@ -143,8 +158,11 @@ const loadUnityGame = async () => {
         else if (type === 'warning') console.warn('[Unity Banner]', msg)
         else console.log('[Unity Banner]', msg)
       },
+    }, (progress: number) => {
+      console.log('[Unity] Progress:', Math.round(progress * 100) + '%', `(${Math.round((performance.now() - startTime) / 1000)}s)`)
     }) as any;
 
+    console.log('[Unity] Instance created in', Math.round((performance.now() - startTime) / 1000) + 's')
     gameStore.$patch({ unityInstance: unity })
   } catch (e: any) {
     console.error('[Unity] Failed to load:', e.message || e)
