@@ -1,7 +1,7 @@
 <template>
   <AtomsBox class="h-full bg-white w-fit">
     <AtomsGamePageUnityGame game="impactman" />
-    <div class="absolute -bottom-14 flex gap-2 w-full">
+    <div v-if="!isArcadeView" class="absolute -bottom-14 flex gap-2 w-full">
       <div v-if="store.global.gameScreen === 'playing'" class="flex gap-2 mb-2">
         <img v-for="i in store.global.currentLives" :key="i" class="w-8 h-8" src="/images/newship.png" />
       </div>
@@ -105,22 +105,27 @@ import { useConsoleSocket } from '~~/composables/useConsoleSocket';
 
 const store = useGameStore()
 const { connect, send, on, disconnect } = useConsoleSocket()
+
+// Dev settings — injected from GamePage
+const viewMode = inject('viewMode', ref('web'))
+const isArcadeView = computed(() => viewMode.value === 'arcade')
+const playFlow = inject('playFlow', ref('qr'))
 const isOnline = ref(true)
 
 const route = useRoute()
 
-// Console identification — prefer URL param, then localStorage, then default
+// Console identification — prefer URL param, then localStorage, then default to DEV-001
 const consoleId = ref(process.client
-  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'ONLINE')
-  : 'ONLINE')
+  ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'DEV-001')
+  : 'DEV-001')
 const raspiId = ref(process.client
   ? ((route.query.raspi as string) || localStorage.getItem('raspiId') || null)
   : null)
 
 const apiBase = resolveApiBase()
 
-// Online mode: playing via web browser, not on a physical arcade console
-const isOnlineMode = computed(() => consoleId.value === 'ONLINE')
+// Online mode: freeplay skips QR flow, qr forces arcade flow
+const isOnlineMode = computed(() => playFlow.value === 'freeplay')
 
 // Login QR URL - links to unified play page
 const loginQrUrl = computed(() => {
@@ -187,11 +192,12 @@ onMounted(() => {
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
 
-    // Console-specific setup (skip for online/web players)
+    // Console-specific setup — only when running on a real arcade console (URL has ?console=)
+    const isRealConsole = !!(route.query.console as string)
     let loginPollInterval: ReturnType<typeof setInterval> | null = null
     let pendingGamePollInterval: ReturnType<typeof setInterval> | null = null
 
-    if (!isOnlineMode.value) {
+    if (isRealConsole) {
       // Clear any stale user — both locally AND on the API server.
       store.clearUser()
       store.readyToPlay = false
@@ -234,7 +240,7 @@ onMounted(() => {
       clearInterval(focusInterval)
       if (loginPollInterval) clearInterval(loginPollInterval)
       if (pendingGamePollInterval) clearInterval(pendingGamePollInterval)
-      if (!isOnlineMode.value) disconnect()
+      if (isRealConsole) disconnect()
     })
   }
 })
