@@ -22,6 +22,7 @@ export interface UnityWebMessage {
 const props = defineProps<UnityGameProps>()
 const gameStore = useGameStore()
 
+let unityLoading = false
 
 const OnWebMessage = (message: string) => {
   const data: UnityWebMessage = JSON.parse(message)
@@ -77,6 +78,7 @@ const OnWebMessage = (message: string) => {
 useHead({
   script: [
     {
+      key: 'unity-loader',
       src: '/unity/impactman/Build/impactman.loader.js',
       body: true,
       onload: () => {
@@ -117,6 +119,9 @@ onBeforeMount(() => {
 })
 
 const loadUnityGame = async () => {
+  if (unityLoading) return
+  unityLoading = true
+
   var meta = document.createElement('meta');
   meta.name = 'viewport';
   meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
