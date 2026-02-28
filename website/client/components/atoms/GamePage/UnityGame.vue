@@ -96,6 +96,13 @@ onBeforeRouteLeave(async () => {
 onBeforeMount(() => {
   window.OnWebMessage = OnWebMessage
 
+  // Catch unhandled promise rejections — Unity's loader silently swallows
+  // errors from the data file parsing callback when stackTraceRegExp is unset
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error('[Unity] Unhandled rejection:', e.reason?.message || e.reason || e)
+    if (e.reason?.stack) console.error('[Unity] Stack:', e.reason.stack)
+  })
+
   // Resume AudioContext on first user gesture to suppress Unity's
   // "AudioContext was not allowed to start" warnings
   const resumeAudio = () => {
