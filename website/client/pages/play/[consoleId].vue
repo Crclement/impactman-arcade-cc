@@ -251,7 +251,6 @@ definePageMeta({
 })
 
 const route = useRoute()
-const config = useRuntimeConfig()
 
 const consoleId = computed(() => route.params.consoleId as string)
 
@@ -343,13 +342,8 @@ function stopDashboardPoll() {
   }
 }
 
-// API base
-const apiBase = computed(() => {
-  if (process.client && window.location.hostname.includes('trycloudflare.com')) {
-    return 'https://heavy-random-exhibits-alto.trycloudflare.com'
-  }
-  return config.public.apiBase || 'http://localhost:3001'
-})
+// API base — auto-detects Railway, Cloudflare tunnel, or local
+const apiBase = computed(() => resolveApiBase())
 
 function getAuthHeaders() {
   const token = process.client ? localStorage.getItem('impactarcade_token') : null

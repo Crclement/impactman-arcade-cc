@@ -97,8 +97,7 @@ definePageMeta({
   middleware: 'admin',
 })
 
-const config = useRuntimeConfig()
-const apiBase = config.public.apiBase || 'http://localhost:3001'
+const apiBase = resolveApiBase()
 
 const tabs = [
   { id: 'system', label: 'System Tests' },

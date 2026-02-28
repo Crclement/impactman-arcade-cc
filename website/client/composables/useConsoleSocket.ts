@@ -1,18 +1,17 @@
 import { useGameStore } from '~~/store/game'
+import { resolveApiBase } from './useApiBase'
 
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 const listeners = new Map<string, Set<(data: any) => void>>()
 
 export function useConsoleSocket() {
-  const config = useRuntimeConfig()
   const store = useGameStore()
 
   const connected = ref(false)
 
   function getWsUrl() {
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
-    return apiBase.replace(/^http/, 'ws')
+    return resolveApiBase().replace(/^http/, 'ws')
   }
 
   function connect(consoleId: string) {

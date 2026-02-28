@@ -1,3 +1,5 @@
+import { resolveApiBase } from './useApiBase'
+
 const QUEUE_KEY = 'impactarcade_offline_queue'
 const SYNC_INTERVAL = 30000 // 30 seconds
 
@@ -24,6 +26,19 @@ function getQueue(): QueuedRequest[] {
 
 function saveQueue(queue: QueuedRequest[]) {
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
+}
+
+/** Rewrite a stored URL's origin to match the current API base. */
+function rewriteUrl(storedUrl: string, currentBase: string): string {
+  try {
+    const parsed = new URL(storedUrl)
+    const baseParsed = new URL(currentBase)
+    parsed.protocol = baseParsed.protocol
+    parsed.host = baseParsed.host
+    return parsed.toString()
+  } catch {
+    return storedUrl
+  }
 }
 
 export function useOfflineQueue() {
@@ -57,11 +72,15 @@ export function useOfflineQueue() {
     const queue = getQueue()
     if (queue.length === 0) return
 
+    const currentBase = resolveApiBase()
     const remaining: QueuedRequest[] = []
 
     for (const req of queue) {
+      // Rewrite URL origin — fixes stale localhost URLs when API is on Railway/tunnel
+      const url = rewriteUrl(req.url, currentBase)
+
       try {
-        await $fetch(req.url, {
+        await $fetch(url, {
           method: req.method as any,
           body: req.body,
           headers: req.headers,

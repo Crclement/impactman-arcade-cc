@@ -107,7 +107,6 @@
 
 <script lang="ts" setup>
 const route = useRoute()
-const config = useRuntimeConfig()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -122,7 +121,7 @@ const name = ref('')
 onMounted(async () => {
   try {
     const code = route.params.code as string
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
+    const apiBase = resolveApiBase()
     const res = await $fetch<any>(`${apiBase}/api/sessions/${code}`)
     session.value = res
   } catch (e: any) {
@@ -142,7 +141,7 @@ async function claimScore() {
   claiming.value = true
   try {
     const code = route.params.code as string
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
+    const apiBase = resolveApiBase()
     const res = await $fetch<any>(`${apiBase}/api/sessions/${code}/claim`, {
       method: 'POST',
       body: {

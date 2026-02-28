@@ -50,8 +50,7 @@
 </template>
 
 <script lang="ts" setup>
-const config = useRuntimeConfig()
-const apiBase = config.public.apiBase || 'http://localhost:3001'
+const apiBase = resolveApiBase()
 const running = ref(false)
 
 interface TestItem {

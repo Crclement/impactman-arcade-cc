@@ -99,7 +99,6 @@ import { useConsoleSocket } from '~~/composables/useConsoleSocket';
 import { useOfflineQueue } from '~~/composables/useOfflineQueue';
 import NicePage from './NicePage.vue';
 
-const config = useRuntimeConfig()
 const show = ref(true)
 const gameStore = useGameStore()
 const { on, send } = useConsoleSocket()
@@ -124,7 +123,7 @@ const raspiId = ref(process.client
   ? ((route.query.raspi as string) || localStorage.getItem('raspiId') || 'RPI-001')
   : 'RPI-001')
 
-const apiBase = config.public.apiBase || 'http://localhost:3001'
+const apiBase = resolveApiBase()
 
 // Login QR for new players - links to unified play page
 const loginQrUrl = computed(() => {

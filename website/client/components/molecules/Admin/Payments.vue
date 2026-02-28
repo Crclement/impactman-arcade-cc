@@ -97,8 +97,7 @@
 </template>
 
 <script lang="ts" setup>
-const runtimeConfig = useRuntimeConfig()
-const apiBase = runtimeConfig.public.apiBase || 'http://localhost:3001'
+const apiBase = resolveApiBase()
 
 const loading = ref(true)
 const error = ref<string | null>(null)

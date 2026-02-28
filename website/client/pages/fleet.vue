@@ -70,8 +70,7 @@ definePageMeta({
   layout: 'default'
 })
 
-const config = useRuntimeConfig()
-const apiBase = config.public.apiBase || 'http://localhost:3001'
+const apiBase = resolveApiBase()
 
 const consoles = ref<any[]>([])
 const stats = ref<any>({

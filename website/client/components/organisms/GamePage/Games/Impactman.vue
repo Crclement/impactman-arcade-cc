@@ -107,7 +107,6 @@ const store = useGameStore()
 const { connect, send, on, disconnect } = useConsoleSocket()
 const isOnline = ref(true)
 
-const config = useRuntimeConfig()
 const route = useRoute()
 
 // Console identification — prefer URL param, then localStorage, then default
@@ -118,7 +117,7 @@ const raspiId = ref(process.client
   ? ((route.query.raspi as string) || localStorage.getItem('raspiId') || null)
   : null)
 
-const apiBase = config.public.apiBase || 'http://localhost:3001'
+const apiBase = resolveApiBase()
 
 // Online mode: playing via web browser, not on a physical arcade console
 const isOnlineMode = computed(() => consoleId.value === 'ONLINE')

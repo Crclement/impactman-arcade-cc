@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { User } from './auth'
+import { resolveApiBase } from '~~/composables/useApiBase'
 
 export interface LoggedInUser {
   id: string,
@@ -80,8 +81,7 @@ export const useGameStore = defineStore('game', {
     },
     async fetchLeaderboard() {
       try {
-        const config = useRuntimeConfig()
-        const apiBase = config.public.apiBase || 'http://localhost:3001'
+        const apiBase = resolveApiBase()
         const res = await $fetch<any[]>(`${apiBase}/api/leaderboard`)
         this.leaderboard = res.map((entry: any) => ({
           user: { name: entry.userName },
@@ -93,8 +93,7 @@ export const useGameStore = defineStore('game', {
     },
     async fetchConsoleTotalBags(consoleId: string) {
       try {
-        const config = useRuntimeConfig()
-        const apiBase = config.public.apiBase || 'http://localhost:3001'
+        const apiBase = resolveApiBase()
         const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId}/total-bags`)
         this.consoleTotalBags = res.totalBags || 0
       } catch {

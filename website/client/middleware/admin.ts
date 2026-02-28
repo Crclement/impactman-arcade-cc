@@ -1,6 +1,5 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  const config = useRuntimeConfig()
-  const apiBase = config.public.apiBase || 'http://localhost:3001'
+  const apiBase = resolveApiBase()
 
   const token = typeof window !== 'undefined'
     ? localStorage.getItem('impactarcade_token')

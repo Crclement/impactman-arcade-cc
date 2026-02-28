@@ -3,7 +3,7 @@
     <AtomsContainer fluid class="game-page">
       <div class="flex flex-col gap-5 game-page__section w-full">
         <OrganismsGamePageRealImpact class="md:hidden" />
-        <OrganismsGamePageImpactCounter :impact="gameStore.consoleTotalBags" :goal="200" />
+        <OrganismsGamePageImpactCounter v-if="gameStore.consoleTotalBags > 0" :impact="gameStore.consoleTotalBags" :goal="200" />
         <OrganismsGamePageSummaryList v-if="showLastGameStats" class="hidden md:block" />
         <OrganismsGamePageLeaderboard class="hidden md:block" />
       </div>
@@ -27,10 +27,10 @@
 <script lang="ts" setup>
 import { useGameStore } from '~~/store/game'
 import { useOfflineQueue } from '~~/composables/useOfflineQueue'
+import { resolveApiBase } from '~~/composables/useApiBase'
 
 const gameStore = useGameStore()
 const route = useRoute()
-const config = useRuntimeConfig()
 const { enqueue, startAutoSync } = useOfflineQueue()
 
 // Console identification — defaults to 'ONLINE' for web players (no physical console)
@@ -38,7 +38,7 @@ const consoleId = process.client
   ? ((route.query.console as string) || localStorage.getItem('consoleId') || 'ONLINE')
   : 'ONLINE'
 
-const apiBase = config.public.apiBase || 'http://localhost:3001'
+const apiBase = resolveApiBase()
 
 // Only show score/level/tickets after a game has ended (not on menu)
 const showLastGameStats = computed(() => {

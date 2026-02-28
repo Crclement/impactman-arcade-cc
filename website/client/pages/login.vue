@@ -74,7 +74,6 @@
 
 <script lang="ts" setup>
 const route = useRoute()
-const config = useRuntimeConfig()
 
 const email = ref('')
 const name = ref('')
@@ -93,7 +92,7 @@ async function login() {
   error.value = null
 
   try {
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
+    const apiBase = resolveApiBase()
     const res = await $fetch<any>(`${apiBase}/api/users/login`, {
       method: 'POST',
       body: {

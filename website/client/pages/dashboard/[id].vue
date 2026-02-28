@@ -153,7 +153,6 @@ definePageMeta({
 })
 
 const route = useRoute()
-const config = useRuntimeConfig()
 
 // Console ID from query params (passed through from login page)
 const consoleId = computed(() => route.query.console as string || '')
@@ -197,7 +196,7 @@ const devCreditLoading = ref(false)
 const devCreditSuccess = ref(false)
 
 onMounted(async () => {
-  const apiBase = config.public.apiBase || 'http://localhost:3001'
+  const apiBase = resolveApiBase()
 
   try {
     const userId = route.params.id as string
@@ -234,7 +233,7 @@ onMounted(async () => {
 })
 
 async function initializeApplePay() {
-  const apiBase = config.public.apiBase || 'http://localhost:3001'
+  const apiBase = resolveApiBase()
 
   try {
     const paymentConfig = await $fetch<any>(`${apiBase}/api/payments/config`)
@@ -304,7 +303,7 @@ async function handleApplePayClick() {
     const tokenResult = await applePay.value.tokenize()
 
     if (tokenResult.status === 'OK') {
-      const apiBase = config.public.apiBase || 'http://localhost:3001'
+      const apiBase = resolveApiBase()
       const result = await $fetch<any>(`${apiBase}/api/payments/apple-pay`, {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -342,7 +341,7 @@ async function triggerPlayAgain() {
   playAgainError.value = null
 
   try {
-    const apiBase = config.public.apiBase || 'http://localhost:3001'
+    const apiBase = resolveApiBase()
     const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/start-game`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -371,7 +370,7 @@ async function devAddCredit() {
   if (!userData.value) return
   devCreditLoading.value = true
   devCreditSuccess.value = false
-  const apiBase = config.public.apiBase || 'http://localhost:3001'
+  const apiBase = resolveApiBase()
 
   try {
     const res = await $fetch<any>(`${apiBase}/api/users/${userData.value.id}/dev-credit`, {
