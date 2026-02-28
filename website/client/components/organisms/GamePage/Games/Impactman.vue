@@ -1,9 +1,20 @@
 <template>
-  <AtomsBox class="h-full bg-white w-fit">
-    <AtomsGamePageUnityGame game="impactman" />
-    <div class="absolute -bottom-14 flex gap-2 w-full">
+  <AtomsBox class="h-full bg-white w-fit relative">
+    <AtomsGamePageCanvasGame />
+    <div class="absolute -bottom-14 flex gap-2 w-full items-center">
       <div v-if="store.global.gameScreen === 'playing'" class="flex gap-2 mb-2">
         <img v-for="i in store.global.currentLives" :key="i" class="w-8 h-8" src="/images/newship.png" />
+      </div>
+      <!-- Dev level selector -->
+      <div v-if="isDev" class="flex items-center gap-1">
+        <span class="text-xs font-bold text-gray-500">DEV:</span>
+        <select
+          @change="devJumpToLevel($event)"
+          class="bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded cursor-pointer"
+        >
+          <option value="" disabled selected>Jump to level</option>
+          <option v-for="i in 7" :key="i" :value="i">Level {{ i }}</option>
+        </select>
       </div>
 
       <div class="ml-auto select-none	">
@@ -21,6 +32,13 @@
         </div>
       </div>
 
+    </div>
+    <div v-if="store.global.gameScreen === 'menu'"
+      class="absolute left-1/2 -translate-x-1/2 top-6 flex flex-col items-center z-10">
+      <img src="/game-sprites/menu/title-logo.png" alt="IMPACT-MAN" class="w-[85%] max-w-[500px] drop-shadow-lg" />
+      <!-- Text version (hidden, kept for fallback) -->
+      <h1 class="game-title font-retro leading-none text-center whitespace-nowrap hidden">Impact-man</h1>
+      <p class="game-subtitle font-retro text-lg tracking-wider mt-1">CAN YOU CLEAN ALL SEVEN SEAS?</p>
     </div>
     <div v-if="store.global.gameScreen === 'menu'"
       class="absolute left-1/2 -translate-x-1/2 bottom-8 flex flex-col items-center">
@@ -91,6 +109,14 @@
         WARNING: THIS GAME REMOVES REAL-WORLD OCEAN PLASTIC!
       </div>
     </div>
+    <!-- Dev play button (on game) -->
+    <button
+      v-if="isDev && store.global.gameScreen === 'menu'"
+      @click="store.StartGame()"
+      class="absolute top-3 left-3 z-50 bg-green-500/90 hover:bg-green-400 text-white text-xs font-bold px-3 py-1 rounded-full cursor-pointer"
+    >
+      DEV PLAY
+    </button>
     <!-- Offline indicator -->
     <div v-if="!isOnline" class="absolute top-3 right-3 bg-red-500/90 text-white text-xs font-bold px-3 py-1 rounded-full">
       OFFLINE
@@ -121,6 +147,7 @@ const apiBase = resolveApiBase()
 
 // Online mode: playing via web browser, not on a physical arcade console
 const isOnlineMode = computed(() => consoleId.value === 'ONLINE')
+const isDev = process.dev
 
 // Login QR URL - links to unified play page
 const loginQrUrl = computed(() => {
@@ -150,6 +177,15 @@ const handleKeydown = (e: KeyboardEvent) => {
   if (store.global.gameScreen === 'playing') {
     focusCanvas()
   }
+}
+
+const devJumpToLevel = (e: Event) => {
+  const level = parseInt((e.target as HTMLSelectElement).value)
+  if (level && store.gameInstance?.devSetLevel) {
+    store.gameInstance.devSetLevel(level)
+    setTimeout(focusCanvas, 100)
+  }
+  ;(e.target as HTMLSelectElement).selectedIndex = 0
 }
 
 const APP_VERSION = 'v2.1.0 — QR Unified Dashboard'
@@ -246,18 +282,29 @@ watch(() => store.global.gameScreen, (screen) => {
   }
 })
 
-// Watch sound state and notify Unity
+// Watch sound state and notify game engine
 watch(() => store.sound, (soundOn) => {
-  if (store.unityInstance) {
-    store.unityInstance.SendMessage("GameManager", "OnWebMessage", JSON.stringify({
-      Event: "Sound",
-      Payload: { Enabled: soundOn }
-    }))
+  if (store.gameInstance) {
+    store.gameInstance.setSound(soundOn)
   }
 })
 </script>
 
 <style lang="sass" scoped>
+.game-title
+  font-size: 80px
+  color: #fdf352
+  -webkit-text-stroke: 2px #2a2a4e
+  paint-order: stroke fill
+  // 3D block: teal green extrusion then dark shadow behind
+  text-shadow: 1px 2px 0 #63dbb4, 2px 4px 0 #63dbb4, 3px 6px 0 #63dbb4, 4px 8px 0 #53c9a2, 5px 10px 0 #2e2e52, 6px 12px 0 #2e2e52
+  letter-spacing: 2px
+  transform: rotate(-4deg) skewX(-6deg)
+
+.game-subtitle
+  color: #FCF252
+  transform: rotate(-3deg) skewX(-4deg)
+
 .text-play
   -webkit-text-stroke: 2px black
   letter-spacing: -4px

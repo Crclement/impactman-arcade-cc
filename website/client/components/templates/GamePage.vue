@@ -54,6 +54,7 @@ onMounted(() => {
 
 watch(() => gameStore.global.gameScreen, async (newVal) => {
   if (newVal === "gameover") {
+    gameStore.gameInstance?.destroy()
     gameStore.unityInstance?.Quit()
 
     // Save score in background, then reload to return to home screen

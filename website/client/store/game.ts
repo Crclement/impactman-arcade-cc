@@ -17,6 +17,7 @@ export interface GameStore {
   leaderboard: GameScore[],
   allies: string[],
   unityInstance?: any,
+  gameInstance?: any,
   loggedInUser: LoggedInUser | null,
   readyToPlay: boolean,
   consoleTotalBags: number,
@@ -51,6 +52,7 @@ export const useGameStore = defineStore('game', {
     },
     leaderboard: [],
     unityInstance: null,
+    gameInstance: null,
     allies: [],
     loggedInUser: null,
     readyToPlay: false,
@@ -77,7 +79,11 @@ export const useGameStore = defineStore('game', {
       }
     },
     SendMessage(message: string){
-      this.unityInstance.SendMessage("GameManager", "OnWebMessage", message)
+      if (this.gameInstance) {
+        this.gameInstance.sendMessage(message)
+      } else if (this.unityInstance) {
+        this.unityInstance.SendMessage("GameManager", "OnWebMessage", message)
+      }
     },
     async fetchLeaderboard() {
       try {
@@ -101,12 +107,18 @@ export const useGameStore = defineStore('game', {
       }
     },
     StartGame(){
-      this.unityInstance.SendMessage("StartManager", "LoadGame")
-      // Focus canvas for keyboard input (important for arcade cabinet)
-      setTimeout(() => {
-        const canvas = document.getElementById('unity-canvas')
-        if (canvas) canvas.focus()
-      }, 100)
+      if (this.gameInstance) {
+        this.gameInstance.startGame()
+        setTimeout(() => {
+          this.gameInstance?.focus()
+        }, 100)
+      } else if (this.unityInstance) {
+        this.unityInstance.SendMessage("StartManager", "LoadGame")
+        setTimeout(() => {
+          const canvas = document.getElementById('unity-canvas')
+          if (canvas) canvas.focus()
+        }, 100)
+      }
     }
   },
   getters: {
