@@ -138,7 +138,11 @@ const loadUnityGame = async () => {
       productVersion: "1.0",
       print: (msg: string) => { if (msg) console.log('[Unity]', msg) },
       printErr: (msg: string) => { if (msg) console.warn('[Unity]', msg) },
-      showBanner: () => {},
+      showBanner: (msg: string, type: string) => {
+        if (type === 'error') console.error('[Unity Banner]', msg)
+        else if (type === 'warning') console.warn('[Unity Banner]', msg)
+        else console.log('[Unity Banner]', msg)
+      },
     }) as any;
 
     gameStore.$patch({ unityInstance: unity })
