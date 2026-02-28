@@ -171,21 +171,6 @@ const loadUnityGame = async () => {
       onRuntimeInitialized: () => {
         console.log('[Unity] Runtime initialized!')
       },
-      // Override IDBFS init to prevent FS.syncfs from blocking startup.
-      // The default implementation hangs on Raspberry Pi (Chromium/Cage)
-      // because FS.syncfs(true, cb) never calls back.
-      unityFileSystemInit: function () {
-        const Module = this as any
-        const FS = Module.FS
-        const IDBFS = Module.IDBFS
-        FS.mkdir('/idbfs')
-        FS.mount(IDBFS, {}, '/idbfs')
-        // Non-blocking sync — don't add a run dependency
-        FS.syncfs(true, (err: any) => {
-          if (err) console.warn('[Unity] IDBFS sync error:', err)
-          else console.log('[Unity] IDBFS sync complete')
-        })
-      },
     }, (progress: number) => {
       const pct = Math.round(progress * 100)
       // Only log at 5% intervals to reduce noise, plus 0% and 90%+
