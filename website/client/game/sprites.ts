@@ -116,15 +116,15 @@ export class SpriteLoader {
     })
   }
 
-  private loadMapLayer(src: string, target: 'bg' | 'overlay'): Promise<void> {
+  /** Load a single image, returning null on failure */
+  private loadSingleImage(src: string): Promise<HTMLImageElement | null> {
     return new Promise((resolve) => {
       const img = new Image()
-      img.onload = () => {
-        if (target === 'overlay') this.mapOverlay.push(img)
-        else this.mapBackground.push(img)
-        resolve()
+      img.onload = () => resolve(img)
+      img.onerror = () => {
+        console.warn(`[Sprites] Failed to load map layer: ${src}`)
+        resolve(null)
       }
-      img.onerror = () => resolve() // skip missing map layers
       img.src = src
     })
   }
@@ -135,10 +135,27 @@ export class SpriteLoader {
     this.mapBackground = []
     this.mapOverlay = []
 
+    // Load all layers in parallel — Promise.all preserves input order,
+    // guaranteeing: Sea (bottom) → Land (path borders) → CentralTrash (top)
     const bgFiles = [`M${level} - Sea.png`, `M${level} - Land.png`, 'CentralTrash.png']
-    const bgPromises = bgFiles.map(f => this.loadMapLayer(`/game-sprites/maps/${f}`, 'bg'))
-    const ovPromise = this.loadMapLayer(`/game-sprites/maps/M${level} - Addons.png`, 'overlay')
-    await Promise.all([...bgPromises, ovPromise])
+    const [bgImages, overlay] = await Promise.all([
+      Promise.all(bgFiles.map(f => this.loadSingleImage(`/game-sprites/maps/${f}`))),
+      this.loadSingleImage(`/game-sprites/maps/M${level} - Addons.png`),
+    ])
+
+    // Add in guaranteed order (nulls filtered out for missing layers)
+    for (const img of bgImages) {
+      if (img) this.mapBackground.push(img)
+    }
+    if (overlay) this.mapOverlay.push(overlay)
+
+    // Sanity check: warn if Land layer (path borders) is missing
+    if (!bgImages[1]) {
+      console.error(`[Sprites] MISSING: M${level} - Land.png — path borders will not render!`)
+    }
+    if (this.mapBackground.length < 2) {
+      console.error(`[Sprites] Level ${level} map only has ${this.mapBackground.length} background layers (expected 3: Sea, Land, CentralTrash)`)
+    }
   }
 
   private loadMenuBackground(src: string): Promise<void> {
