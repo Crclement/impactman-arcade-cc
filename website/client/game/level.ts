@@ -9,7 +9,7 @@ export class Level {
   readonly ghostSpawns: Position[]
   readonly ghostPenExit: Position
   readonly ghostPenCenter: Position
-  readonly tunnelRow: number
+  readonly tunnelRows: number[]
   readonly eggs: Position[]
 
   // Mutable grid — collectables get removed during gameplay
@@ -25,7 +25,7 @@ export class Level {
     this.ghostSpawns = data.ghostSpawns.map(s => ({ ...s }))
     this.ghostPenExit = { ...data.ghostPenExit }
     this.ghostPenCenter = { ...data.ghostPenCenter }
-    this.tunnelRow = data.tunnelRow
+    this.tunnelRows = data.tunnelRows
     this.eggs = data.eggs.map(e => ({ ...e }))
 
     // Deep copy the grid
@@ -45,7 +45,7 @@ export class Level {
 
   getTile(x: number, y: number): TileType {
     // Handle tunnel wrapping
-    if (y === this.tunnelRow) {
+    if (this.tunnelRows.includes(y)) {
       if (x < 0) x = this.cols - 1
       if (x >= this.cols) x = 0
     }
@@ -95,7 +95,7 @@ export class Level {
 
   // Wrap tunnel position
   wrapX(x: number, y: number): number {
-    if (y !== this.tunnelRow) return x
+    if (!this.tunnelRows.includes(y)) return x
     if (x < 0) return this.cols - 1
     if (x >= this.cols) return 0
     return x

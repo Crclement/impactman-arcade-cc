@@ -1,6 +1,7 @@
 <template>
   <div v-show="gameStore.global.gameScreen === 'egg'"
-    class="absolute w-full h-full top-0 left-0 z-20 flex-col rounded-lg flex items-center justify-center bg-[#16114F]/85">
+    class="absolute w-full h-full top-0 left-0 z-30 flex-col rounded-lg flex items-center justify-center"
+    style="background: rgba(22, 17, 79, 0.85); will-change: transform;">
     <AtomsTextHighlight class="inline-flex stroke-2 font-retro text-3xl">
       <img src="/images/icons/thunder.png" class="w-6 mr-4" /> You found an impact egg
     </AtomsTextHighlight>

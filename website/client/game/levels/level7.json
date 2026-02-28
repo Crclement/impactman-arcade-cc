@@ -2,7 +2,7 @@
   "cols": 26,
   "rows": 29,
   "tileSize": 32,
-  "tunnelRow": 16,
+  "tunnelRows": [0, 16],
   "playerSpawn": { "x": 13, "y": 22 },
   "ghostSpawns": [
     { "x": 11, "y": 13 },

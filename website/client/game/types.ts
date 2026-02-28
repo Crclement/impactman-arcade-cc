@@ -30,7 +30,7 @@ export interface LevelData {
   ghostSpawns: Position[]
   ghostPenExit: Position   // where ghosts exit the pen (top of pen corridor)
   ghostPenCenter: Position // center of ghost pen
-  tunnelRow: number        // row index where tunnel wrapping occurs
+  tunnelRows: number[]     // row indices where tunnel wrapping occurs
   eggs: Position[]         // egg positions (subset of grid)
 }
 

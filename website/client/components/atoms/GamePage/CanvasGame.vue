@@ -103,6 +103,8 @@ onUnmounted(() => {
 
 <style lang="sass" scoped>
 .canvas-game
+  z-index: 0
+  isolation: isolate
   width: 600px
   height: 664px
 

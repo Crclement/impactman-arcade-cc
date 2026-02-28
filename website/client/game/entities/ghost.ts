@@ -83,17 +83,23 @@ export class Ghost {
       // Exit ghost pen
       this.moveTowardPenExit(dt, level)
 
-      // Check if at pen exit
-      if (this.gridPos.x === level.ghostPenExit.x && this.gridPos.y === level.ghostPenExit.y) {
-        this.state = 'scatter'
-        this.scatterTimer = 0
-        this.scatterCycles = 0
-      } else if (this.startTimer >= this.startDelay + 3000) {
-        // Force-exit if stuck
+      // Check if at or past pen exit (y <= exit.y means at or above exit row)
+      if (this.gridPos.x === level.ghostPenExit.x && this.gridPos.y <= level.ghostPenExit.y) {
         this.gridPos = { ...level.ghostPenExit }
         const pixel = gridToPixelCenter(this.gridPos.x, this.gridPos.y)
         this.pixelPos = { ...pixel }
         this.targetPixel = { ...pixel }
+        this.movingToTarget = false
+        this.state = 'scatter'
+        this.scatterTimer = 0
+        this.scatterCycles = 0
+      } else if (this.startTimer >= this.startDelay + 2000) {
+        // Force-exit if stuck after 2s
+        this.gridPos = { ...level.ghostPenExit }
+        const pixel = gridToPixelCenter(this.gridPos.x, this.gridPos.y)
+        this.pixelPos = { ...pixel }
+        this.targetPixel = { ...pixel }
+        this.movingToTarget = false
         this.state = 'scatter'
         this.scatterTimer = 0
         this.scatterCycles = 0
@@ -103,11 +109,18 @@ export class Ghost {
 
   private moveTowardPenExit(dt: number, level: Level): void {
     const exit = level.ghostPenExit
-    const dir = findPath({ x: this.gridPos.x, y: this.gridPos.y }, exit, level)
-    if (dir) {
-      this.direction = dir
-      this.moveInDirection(dt, level)
+
+    // Simple directional exit: align x with exit, then move up
+    // This is more reliable than A* through the small pen corridor
+    if (this.gridPos.x < exit.x) {
+      this.direction = 'right'
+    } else if (this.gridPos.x > exit.x) {
+      this.direction = 'left'
+    } else {
+      this.direction = 'up'
     }
+
+    this.moveInDirection(dt, level)
   }
 
   private updateScatter(dt: number, level: Level, playerPos: Position, playerDir: Direction): void {
