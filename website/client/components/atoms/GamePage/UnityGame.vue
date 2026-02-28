@@ -158,8 +158,18 @@ const loadUnityGame = async () => {
         else if (type === 'warning') console.warn('[Unity Banner]', msg)
         else console.log('[Unity Banner]', msg)
       },
+      monitorRunDependencies: (left: number) => {
+        console.log('[Unity] Run dependencies remaining:', left)
+      },
+      onRuntimeInitialized: () => {
+        console.log('[Unity] Runtime initialized!')
+      },
     }, (progress: number) => {
-      console.log('[Unity] Progress:', Math.round(progress * 100) + '%', `(${Math.round((performance.now() - startTime) / 1000)}s)`)
+      const pct = Math.round(progress * 100)
+      // Only log at 5% intervals to reduce noise, plus 0% and 90%+
+      if (pct % 5 === 0 || pct >= 90) {
+        console.log('[Unity] Progress:', pct + '%', `(${Math.round((performance.now() - startTime) / 1000)}s)`)
+      }
     }) as any;
 
     console.log('[Unity] Instance created in', Math.round((performance.now() - startTime) / 1000) + 's')
