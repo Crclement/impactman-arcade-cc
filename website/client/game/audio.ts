@@ -7,7 +7,7 @@ export class AudioManager {
   async load(): Promise<void> {
     // Background music
     this.music = this.createAudio('/game-audio/GameSong.mp3', true)
-    this.music.volume = 0.3
+    this.music.volume = 0.5
 
     // Sound effects
     const sfxFiles: Record<string, string> = {
@@ -66,6 +66,16 @@ export class AudioManager {
       this.music.pause()
       this.music.currentTime = 0
     }
+  }
+
+  /** Mute music during frightened mode (Unity: volume 0) */
+  muteMusic(): void {
+    if (this.music) this.music.volume = 0
+  }
+
+  /** Restore music after frightened ends (Unity: volume 1.0) */
+  unmuteMusic(): void {
+    if (this.music) this.music.volume = 1.0
   }
 
   setEnabled(enabled: boolean): void {

@@ -52,7 +52,9 @@ export class GameEngine {
   private startDelayTimer = 0
   private eggPauseTimer = 0
   private deathAnimTimer = 0
+  private ghostKillPauseTimer = 0
   private running = false
+  private musicMuted = false
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -118,7 +120,7 @@ export class GameEngine {
 
     const config = this.getLevelConfig()
     this.player = new Player(data.playerSpawn, config.playerSpeedMultiplier)
-    this.ghosts = data.ghostSpawns.map((spawn, i) => new Ghost(i, spawn, config))
+    this.ghosts = data.ghostSpawns.map((spawn, i) => new Ghost(i, spawn, config, this.currentLevel))
   }
 
   private getLevelData(): LevelData {
@@ -153,6 +155,7 @@ export class GameEngine {
       this.eggPauseTimer -= dt
       if (this.eggPauseTimer <= 0) {
         this.setScreen('playing')
+        this.audio.play('egg_time') // Unity: EggTimerFX plays when frightened activates
       }
       return
     }
@@ -169,6 +172,12 @@ export class GameEngine {
       if (this.deathAnimTimer <= 0) {
         this.onDeathAnimComplete()
       }
+      return
+    }
+
+    // Handle ghost kill pause (0.3s freeze)
+    if (this.ghostKillPauseTimer > 0) {
+      this.ghostKillPauseTimer -= dt
       return
     }
 
@@ -197,7 +206,8 @@ export class GameEngine {
         return
       }
     } else if (result.collected === 'egg') {
-      const { eggBags } = this.collectables.collectEgg()
+      const { score, eggBags } = this.collectables.collectEgg()
+      this.events.onScoreChange?.(score)
       this.events.onEggBagsChange?.(eggBags)
       this.events.onBagsChange?.(this.collectables.getBags())
       this.audio.play('egg')
@@ -207,6 +217,10 @@ export class GameEngine {
       for (const ghost of this.ghosts) {
         ghost.startFrightened(config.frightenedDuration * 1000)
       }
+
+      // Mute music during frightened (Unity behavior)
+      this.audio.muteMusic()
+      this.musicMuted = true
 
       // Pause for egg modal
       this.eggPauseTimer = EGG_PAUSE_DURATION
@@ -226,6 +240,12 @@ export class GameEngine {
       ghost.update(dt, this.level, this.player.gridPos, this.player.direction, true)
     }
 
+    // Unmute music when frightened mode ends
+    if (this.musicMuted && !this.ghosts.some(g => g.state === 'frightened')) {
+      this.audio.unmuteMusic()
+      this.musicMuted = false
+    }
+
     // Check player-ghost collisions
     this.checkGhostCollisions()
   }
@@ -235,13 +255,14 @@ export class GameEngine {
       if (!this.player.isCollidingWith(ghost.gridPos)) continue
 
       if (ghost.state === 'frightened') {
-        // Kill ghost
+        // Kill ghost — freeze gameplay for 0.3s
         ghost.kill()
         const { score, bags } = this.collectables.killGhost()
         this.events.onScoreChange?.(score)
         this.events.onBagsChange?.(bags)
         this.audio.play('eat_ghost')
-        this.renderer.shake(300, 4)
+        this.renderer.shake(300, 5)
+        this.ghostKillPauseTimer = 300
       } else if (ghost.state === 'chase' || ghost.state === 'scatter') {
         // Player dies
         this.onPlayerDeath()
@@ -253,9 +274,16 @@ export class GameEngine {
   private onPlayerDeath(): void {
     this.player.startDying()
     this.audio.play('die')
-    this.renderer.shake(500, 6)
-    this.deathAnimTimer = 1500 // death animation duration
-    this.collectables.resetGhostStreak()
+    this.audio.stopMusic()
+    this.renderer.shake(1000, 10)
+    this.deathAnimTimer = 2000 // 2s wait before retry (Unity: Invoke("Retry", 2f))
+
+    // Freeze ghosts 0.1s after death (Unity: Invoke("StopGhosts", 0.1f))
+    setTimeout(() => {
+      for (const ghost of this.ghosts) {
+        ghost.visible = false
+      }
+    }, 100)
   }
 
   private onDeathAnimComplete(): void {
@@ -275,9 +303,11 @@ export class GameEngine {
     const config = this.getLevelConfig()
     this.player.resetToSpawn(data.playerSpawn, config.playerSpeedMultiplier)
     for (const ghost of this.ghosts) {
-      ghost.resetToSpawn(config)
+      ghost.resetToSpawn(config, this.currentLevel)
     }
 
+    this.audio.startMusic()
+    this.audio.play('start')
     this.startDelayTimer = START_DELAY
   }
 

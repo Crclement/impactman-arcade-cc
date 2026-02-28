@@ -71,12 +71,11 @@ export interface LevelConfig {
 export const LEVEL_CONFIGS: LevelConfig[] = [
   // Level 1
   { playerSpeedMultiplier: 0.8, ghostSpeedMultiplier: 0.75, scatterDuration: 5, chaseDuration: 12, maxScatterCycles: 6, frightenedDuration: 6 },
-  // Level 2
-  { playerSpeedMultiplier: 0.9, ghostSpeedMultiplier: 0.85, scatterDuration: 5, chaseDuration: 15, maxScatterCycles: 5, frightenedDuration: 5 },
-  // Level 3
-  { playerSpeedMultiplier: 0.9, ghostSpeedMultiplier: 0.85, scatterDuration: 5, chaseDuration: 15, maxScatterCycles: 4, frightenedDuration: 5 },
+  // Levels 2-3
+  { playerSpeedMultiplier: 0.9, ghostSpeedMultiplier: 0.85, scatterDuration: 5, chaseDuration: 20, maxScatterCycles: 4, frightenedDuration: 5 },
+  { playerSpeedMultiplier: 0.9, ghostSpeedMultiplier: 0.85, scatterDuration: 5, chaseDuration: 20, maxScatterCycles: 4, frightenedDuration: 5 },
   // Level 4+
-  { playerSpeedMultiplier: 1.0, ghostSpeedMultiplier: 0.95, scatterDuration: 3, chaseDuration: 20, maxScatterCycles: 3, frightenedDuration: 4 },
+  { playerSpeedMultiplier: 1.0, ghostSpeedMultiplier: 0.95, scatterDuration: 5, chaseDuration: 20, maxScatterCycles: 2, frightenedDuration: 4 },
 ]
 
 export const BASE_SPEED = 7.5      // tiles per second (base player speed)
@@ -93,10 +92,11 @@ export const GHOST_SPRITE_SIZE = 48
 export const TRASH_SPRITE_SIZE = 20
 export const EGG_SPRITE_SIZE = 72
 export const SCORE_PER_TRASH = 4
+export const SCORE_PER_EGG = 8
 export const SCORE_PER_GHOST = 100
 export const BAGS_PER_100_POINTS = 1
 export const INITIAL_LIVES = 3
 export const START_DELAY = 3000 // ms before movement starts
 export const EGG_PAUSE_DURATION = 2100 // ms pause when egg collected
 export const FRIGHTENED_SPEED_MULT = 0.5
-export const DEAD_SPEED_MULT = 2.0
+export const DEAD_SPEED_MULT = 1.0

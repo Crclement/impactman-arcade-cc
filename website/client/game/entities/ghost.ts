@@ -6,8 +6,8 @@ import type { Level } from '../level'
 // Ghost targeting offsets (tiles ahead/behind player)
 const GHOST_TARGET_OFFSETS = [20, -20, 0, 4]
 
-// Ghost start delays in ms
-const GHOST_START_DELAYS = [0, 1500, 3000, 3000]
+// Ghost start delays in ms (Unity order: index 1 exits first, then 2, then 0 & 3)
+const GHOST_START_DELAYS = [3000, 0, 1500, 3000]
 
 export class Ghost {
   readonly ghostIndex: number
@@ -31,11 +31,15 @@ export class Ghost {
   private chaseTimer = 0
   private scatterCycles = 0
   private levelConfig: LevelConfig
+  private currentLevel = 1
 
   // Target offset for unique ghost behavior
   private targetOffset: number
 
-  constructor(ghostIndex: number, spawn: Position, config: LevelConfig) {
+  // Bounce animation in pen
+  private bounceTimer = 0
+
+  constructor(ghostIndex: number, spawn: Position, config: LevelConfig, level = 1) {
     this.ghostIndex = ghostIndex
     this.spawnPos = { ...spawn }
     this.gridPos = { ...spawn }
@@ -43,6 +47,7 @@ export class Ghost {
     this.pixelPos = { ...pixel }
     this.targetPixel = { ...pixel }
     this.levelConfig = config
+    this.currentLevel = level
     this.targetOffset = GHOST_TARGET_OFFSETS[ghostIndex] || 0
     this.startDelay = GHOST_START_DELAYS[ghostIndex] || 0
     this.baseSpeed = GHOST_BASE_SPEED * config.ghostSpeedMultiplier
@@ -79,6 +84,16 @@ export class Ghost {
 
   private updateStarting(dt: number, level: Level): void {
     this.startTimer += dt
+
+    // Bounce up/down while waiting in pen
+    if (this.startTimer < this.startDelay) {
+      this.bounceTimer += dt
+      const bounceOffset = Math.sin(this.bounceTimer / 200) * 4
+      const center = gridToPixelCenter(this.spawnPos.x, this.spawnPos.y)
+      this.pixelPos.y = center.y + bounceOffset
+      return
+    }
+
     if (this.startTimer >= this.startDelay) {
       // Exit ghost pen
       this.moveTowardPenExit(dt, level)
@@ -126,12 +141,12 @@ export class Ghost {
   private updateScatter(dt: number, level: Level, playerPos: Position, playerDir: Direction): void {
     this.scatterTimer += dt
 
-    // Scatter target: corner of the maze based on ghost index
+    // Scatter target: corner of the maze based on ghost index (Unity mapping)
     const corners: Position[] = [
-      { x: 0, y: 0 },                       // top-left
-      { x: level.cols - 1, y: 0 },           // top-right
-      { x: 0, y: level.rows - 1 },           // bottom-left
-      { x: level.cols - 1, y: level.rows - 1 }, // bottom-right
+      { x: 0, y: 0 },                       // Ghost 0: top-left
+      { x: 0, y: level.rows - 1 },           // Ghost 1: bottom-left
+      { x: level.cols - 1, y: 0 },           // Ghost 2: top-right
+      { x: level.cols - 1, y: level.rows - 1 }, // Ghost 3: bottom-right
     ]
     const target = corners[this.ghostIndex % 4]
 
@@ -140,6 +155,7 @@ export class Ghost {
     if (this.scatterTimer >= this.levelConfig.scatterDuration * 1000) {
       this.state = 'chase'
       this.chaseTimer = 0
+      this.direction = oppositeDir(this.direction) // reverse on transition
     }
   }
 
@@ -150,8 +166,8 @@ export class Ghost {
     const target = this.calculateChaseTarget(playerPos, playerDir, level)
     this.chaseTarget(dt, level, target)
 
-    // Check berserker mode
-    if (level.getRemainingCollectables() < 20) {
+    // Berserker mode: only Ghost 3 (index 2), only on level 2+
+    if (this.ghostIndex === 2 && this.currentLevel > 1 && level.getRemainingCollectables() <= 20) {
       this.speed = this.baseSpeed * 1.1
     }
 
@@ -161,6 +177,7 @@ export class Ghost {
         this.state = 'scatter'
         this.scatterTimer = 0
         this.speed = this.baseSpeed
+        this.direction = oppositeDir(this.direction) // reverse on transition
       }
       // If max cycles reached, stay in chase permanently
     }
@@ -196,8 +213,9 @@ export class Ghost {
     this.moveInDirection(dt, level)
 
     if (this.frightenedTimer <= 0) {
-      this.state = 'chase'
-      this.chaseTimer = 0
+      // Unity: StopFrightened() → StartScatter()
+      this.state = 'scatter'
+      this.scatterTimer = 0
       this.speed = this.baseSpeed
     }
   }
@@ -309,7 +327,7 @@ export class Ghost {
     this.speed = this.baseSpeed * DEAD_SPEED_MULT
   }
 
-  resetToSpawn(config: LevelConfig): void {
+  resetToSpawn(config: LevelConfig, level = 1): void {
     this.gridPos = { ...this.spawnPos }
     const pixel = gridToPixelCenter(this.spawnPos.x, this.spawnPos.y)
     this.pixelPos = { ...pixel }
@@ -322,7 +340,9 @@ export class Ghost {
     this.chaseTimer = 0
     this.scatterCycles = 0
     this.frightenedTimer = 0
+    this.bounceTimer = 0
     this.levelConfig = config
+    this.currentLevel = level
     this.baseSpeed = GHOST_BASE_SPEED * config.ghostSpeedMultiplier
     this.speed = this.baseSpeed
     this.visible = true
