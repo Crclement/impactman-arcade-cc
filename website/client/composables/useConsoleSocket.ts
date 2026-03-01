@@ -33,6 +33,10 @@ export function useConsoleSocket() {
 
         // Handle built-in messages
         if (data.type === 'userLoggedIn' && data.user) {
+          // Reset readyToPlay when a different user logs in
+          if (store.loggedInUser?.id !== data.user.id) {
+            store.readyToPlay = false
+          }
           store.loggedInUser = data.user
         }
 
