@@ -547,34 +547,34 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
 .you-are-here
   position: absolute
   left: 50%
-  bottom: calc(18% + 12px)
+  bottom: 6%
   transform: translateX(-50%)
   z-index: 60
   text-align: center
   pointer-events: none
-  animation: bounce-arrow 1s ease-in-out infinite
 
   &__label
     background: rgba(0, 0, 0, 0.85)
     color: #D9FF69
-    font-size: 14px
+    font-size: 13px
     font-weight: 700
-    padding: 6px 14px
+    padding: 5px 12px
     border-radius: 8px
     white-space: nowrap
-    margin-bottom: 4px
+    margin-bottom: 2px
 
   &__arrow
     color: #D9FF69
-    font-size: 22px
+    font-size: 20px
     line-height: 1
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5))
+    animation: bounce-arrow 0.8s ease-in-out infinite
 
 @keyframes bounce-arrow
   0%, 100%
-    transform: translateX(-50%) translateY(0)
+    transform: translateY(0)
   50%
-    transform: translateX(-50%) translateY(-8px)
+    transform: translateY(4px)
 
 // --- Fade transition ---
 .fade-enter-active, .fade-leave-active
