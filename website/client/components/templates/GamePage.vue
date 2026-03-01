@@ -139,6 +139,23 @@
     </div>
 
     <MoleculesGamePageWinPage v-if="gameStore.global.gameScreen === 'win'" />
+
+    <!-- Game Over overlay — covers everything during score save + reload -->
+    <div v-if="gameStore.global.gameScreen === 'gameover'" class="gameover-overlay">
+      <div class="text-center">
+        <AtomsTextHighlight class="font-retro stroke-2 text-limeGreen text-4xl md:text-6xl">
+          Game Over
+        </AtomsTextHighlight>
+        <div class="mt-8">
+          <p class="text-white/80 font-bold text-xl">
+            Score: {{ gameStore.global.currentScore.toLocaleString() }}
+          </p>
+          <p class="text-white/50 text-sm mt-2">
+            Level {{ gameStore.global.currentLevel }} &bull; {{ gameStore.global.currentBags }} bags collected
+          </p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -479,4 +496,15 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
 .arcade-bottom__levels
   display: flex
   gap: 8px
+
+// --- Game Over overlay ---
+.gameover-overlay
+  position: fixed
+  inset: 0
+  z-index: 200
+  background: rgba(22, 17, 79, 0.92)
+  backdrop-filter: blur(8px)
+  display: flex
+  align-items: center
+  justify-content: center
 </style>
