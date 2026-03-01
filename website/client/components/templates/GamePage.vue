@@ -426,7 +426,7 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
   overflow: hidden
   overscroll-behavior: none
   touch-action: none
-  padding: 20px 40px
+  padding: 20px 60px
 
   // Hide web sidebars entirely in arcade
   .web-sidebar
@@ -437,7 +437,7 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
     background: #d5e8ee
     border-radius: 12px 12px 0 0
     width: 100%
-    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 80px))
+    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 120px))
     flex-shrink: 0
 
   // Game area fills remaining space
@@ -445,7 +445,7 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
     background: #d5e8ee
     flex: 1
     width: 100%
-    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 80px))
+    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 120px))
     min-height: 0
     display: flex
     align-items: flex-start
@@ -470,7 +470,7 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
     background: #d5e8ee
     border-radius: 0 0 12px 12px
     width: 100%
-    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 80px))
+    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 120px))
     flex-shrink: 0
 
 // --- Arcade stats bar ---
