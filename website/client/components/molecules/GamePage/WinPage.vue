@@ -21,14 +21,12 @@
         </div>
 
         <p class="uppercase font-bold text-[#16114F] text-xl mb-8 mt-12">
-          Ready to clean the <span class="text-[#283CF4]">{{ nextLevel.name }} ocean</span>?
+          Next up: <span class="text-[#283CF4]">{{ nextLevel.name }} ocean</span>
         </p>
-        <div class="text-center font-bold">
-          <AtomsGamePageUIButton @click="GoNextLevel" class="bg-limeGreen border-4">
-            <span class="p-4 text-xl">
-              Let's go
-            </span>
-          </AtomsGamePageUIButton>
+        <div class="text-center">
+          <AtomsTextHighlight class="text-8xl font-retro stroke-4 text-limeGreen">
+            {{ countdown }}
+          </AtomsTextHighlight>
         </div>
       </div>
     </div>
@@ -41,6 +39,7 @@ import impactmanLevels from '~~/utils/impactmanLevels';
 
 const show = ref(true)
 const gameStore = useGameStore()
+const countdown = ref(3)
 
 const level = computed(() => {
   const key = (gameStore.global.currentLevel - 2) % impactmanLevels.length
@@ -49,7 +48,6 @@ const level = computed(() => {
 
 const nextLevel = computed(() => {
   const key = (gameStore.global.currentLevel - 1) % impactmanLevels.length
-
   return impactmanLevels[key]
 })
 
@@ -58,7 +56,22 @@ const GoNextLevel = () => {
     Action: 'goNextLevel',
     SessionId: ''
   }))
-  // Immediately dismiss win overlay — don't wait for Unity
   gameStore.$patch({ global: { gameScreen: 'playing' } })
 }
+
+let timer: ReturnType<typeof setInterval>
+
+onMounted(() => {
+  timer = setInterval(() => {
+    countdown.value--
+    if (countdown.value <= 0) {
+      clearInterval(timer)
+      GoNextLevel()
+    }
+  }, 1000)
+})
+
+onUnmounted(() => {
+  clearInterval(timer)
+})
 </script>
