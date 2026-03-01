@@ -192,7 +192,7 @@ onMounted(() => {
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
 
-    // Console-specific setup — only when running on a real arcade console (URL has ?console=)
+    // Arcade-specific setup (physical console with ?console= in URL)
     const isRealConsole = !!(route.query.console as string)
     let loginPollInterval: ReturnType<typeof setInterval> | null = null
     let pendingGamePollInterval: ReturnType<typeof setInterval> | null = null
@@ -202,36 +202,39 @@ onMounted(() => {
       store.clearUser()
       store.readyToPlay = false
       $fetch(`${apiBase}/api/consoles/${consoleId.value}/reset`, { method: 'POST' }).catch(() => {})
-
-      // Connect to WebSocket as this console
-      connect(consoleId.value)
-
-      // Poll for logged-in user as fallback (in case WebSocket doesn't connect)
-      loginPollInterval = setInterval(async () => {
-        if (!store.loggedInUser && store.global.gameScreen === 'menu') {
-          try {
-            const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`)
-            if (res.user) {
-              store.loggedInUser = res.user
-            }
-          } catch (e) {
-            // Silently fail — WebSocket is the primary mechanism
-          }
-        }
-      }, 3000)
-
-      // Poll for pending game (readyToPlay) as fallback when WebSocket is down
-      pendingGamePollInterval = setInterval(async () => {
-        if (store.readyToPlay || store.global.gameScreen !== 'menu') return
-        if (!store.loggedInUser) return
-        try {
-          const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
-          if (res.pending) {
-            store.readyToPlay = true
-          }
-        } catch (_) {}
-      }, 3000)
     }
+
+    // Always connect WebSocket so phone tokens can reach this game
+    console.log(`[WS] Connecting as console: ${consoleId.value}`)
+    connect(consoleId.value)
+
+    // Poll for logged-in user as fallback (in case WebSocket doesn't connect)
+    loginPollInterval = setInterval(async () => {
+      if (!store.loggedInUser && store.global.gameScreen === 'menu') {
+        try {
+          const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/logged-in-user`)
+          if (res.user) {
+            store.loggedInUser = res.user
+          }
+        } catch (e) {
+          // Silently fail — WebSocket is the primary mechanism
+        }
+      }
+    }, 3000)
+
+    // Poll for pending game (readyToPlay) as fallback when WebSocket is down
+    pendingGamePollInterval = setInterval(async () => {
+      if (store.readyToPlay || store.global.gameScreen !== 'menu') return
+      try {
+        const res = await $fetch<any>(`${apiBase}/api/consoles/${consoleId.value}/pending-game`)
+        if (res.pending) {
+          if (res.userId && !store.loggedInUser) {
+            store.loggedInUser = { id: res.userId, name: res.userName, email: '' }
+          }
+          store.readyToPlay = true
+        }
+      } catch (_) {}
+    }, 3000)
 
     onUnmounted(() => {
       window.removeEventListener('keydown', handleKeydown)
@@ -240,7 +243,7 @@ onMounted(() => {
       clearInterval(focusInterval)
       if (loginPollInterval) clearInterval(loginPollInterval)
       if (pendingGamePollInterval) clearInterval(pendingGamePollInterval)
-      if (isRealConsole) disconnect()
+      disconnect()
     })
   }
 })

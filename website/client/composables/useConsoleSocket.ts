@@ -22,13 +22,14 @@ export function useConsoleSocket() {
 
     ws.onopen = () => {
       connected.value = true
-      // Register as this console
+      console.log(`[WS] Connected to ${url}, registering as ${consoleId}`)
       ws!.send(JSON.stringify({ type: 'register', consoleId }))
     }
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        console.log('[WS] Received:', data.type, data)
 
         // Handle built-in messages
         if (data.type === 'userLoggedIn' && data.user) {
@@ -46,6 +47,7 @@ export function useConsoleSocket() {
             store.loggedInUser = { id: data.userId, name: data.userName, email: '' }
           }
           store.readyToPlay = true
+          console.log('[WS] readyToPlay set to true, loggedInUser:', store.loggedInUser?.name)
         }
 
         // Notify listeners
@@ -60,15 +62,18 @@ export function useConsoleSocket() {
           allListeners.forEach(fn => fn(data))
         }
       } catch (e) {
+        console.error('[WS] Parse error:', e)
       }
     }
 
     ws.onclose = () => {
       connected.value = false
+      console.log('[WS] Disconnected, reconnecting in 3s...')
       reconnectTimer = setTimeout(() => connect(consoleId), 3000)
     }
 
     ws.onerror = (err) => {
+      console.error('[WS] Error:', err)
     }
   }
 
