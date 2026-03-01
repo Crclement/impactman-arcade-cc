@@ -291,8 +291,8 @@ onUnmounted(() => {
 })
 
 watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
-  // Show "You are here!" at level start
-  if (newVal === 'playing') {
+  // Show "You are here!" only at the start of a new level (not returning from egg screen)
+  if (newVal === 'playing' && (oldVal === 'menu' || oldVal === 'win')) {
     showYouAreHere.value = true
     if (youAreHereTimer) clearTimeout(youAreHereTimer)
     youAreHereTimer = setTimeout(() => {
@@ -547,7 +547,7 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
 .you-are-here
   position: absolute
   left: 50%
-  bottom: 18%
+  bottom: calc(18% + 12px)
   transform: translateX(-50%)
   z-index: 60
   text-align: center
