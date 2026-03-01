@@ -42,7 +42,7 @@
             <img :src="loginQrUrl" alt="Scan to Play" class="w-32 h-32 rounded" />
           </div>
           <p class="heartbeat font-retro text-[#D9FF69] text-2xl mt-3 tracking-wide">SCAN TO PLAY</p>
-          <p class="text-white/50 text-xs mt-1">Scan with your phone camera</p>
+          <p class="text-white text-xs mt-1 font-bold">Scan with your phone camera</p>
         </div>
       </template>
 

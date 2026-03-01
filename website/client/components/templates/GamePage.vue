@@ -105,6 +105,12 @@
         <slot name="game"></slot>
         <MoleculesGamePageLoading />
       </div>
+      <Transition name="fade">
+        <div v-if="showYouAreHere" class="you-are-here">
+          <div class="you-are-here__label">You are here!</div>
+          <div class="you-are-here__arrow">&#9660;</div>
+        </div>
+      </Transition>
     </div>
 
     <!-- WEB: right sidebar -->
@@ -201,6 +207,10 @@ const formattedScore = computed(() => {
   return gameStore.global.currentScore.toLocaleString()
 })
 
+// --- "You are here!" indicator ---
+const showYouAreHere = ref(false)
+let youAreHereTimer: ReturnType<typeof setTimeout> | null = null
+
 // --- Arcade view canvas scaling ---
 const gameAreaRef = ref<HTMLElement | null>(null)
 const gameInnerRef = ref<HTMLElement | null>(null)
@@ -254,18 +264,49 @@ const showLastGameStats = computed(() => {
   return gameStore.global.gameScreen === 'gameover' || gameStore.global.gameScreen === 'playing'
 })
 
+// --- Scroll lock ---
+const preventScroll = (e: Event) => { e.preventDefault() }
+
 onMounted(() => {
   gameStore.fetchLeaderboard()
   gameStore.fetchConsoleTotalBags(consoleId)
   // Sync any pending offline scores from previous sessions
-  if (process.client) startAutoSync()
+  if (process.client) {
+    startAutoSync()
+    // Lock scrolling to prevent wiggle during gameplay
+    document.documentElement.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('touchmove', preventScroll, { passive: false })
+  }
 })
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
+  if (youAreHereTimer) clearTimeout(youAreHereTimer)
+  if (process.client) {
+    document.documentElement.style.overflow = ''
+    document.body.style.overflow = ''
+    document.removeEventListener('touchmove', preventScroll)
+  }
 })
 
-watch(() => gameStore.global.gameScreen, async (newVal) => {
+watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
+  // Show "You are here!" at level start
+  if (newVal === 'playing') {
+    showYouAreHere.value = true
+    if (youAreHereTimer) clearTimeout(youAreHereTimer)
+    youAreHereTimer = setTimeout(() => {
+      showYouAreHere.value = false
+    }, 3000)
+  }
+
+  // Stop egg music when level is beaten
+  if (newVal === 'win' && gameStore.unityInstance) {
+    try {
+      gameStore.SendMessage(JSON.stringify({ Action: 'stopEggMusic' }))
+    } catch {}
+  }
+
   if (newVal === "gameover") {
     gameStore.unityInstance?.Quit()
 
@@ -330,6 +371,8 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
   @apply relative min-h-screen
   display: flex
   flex-direction: column
+  overflow: hidden
+  overscroll-behavior: none
 
   &::before
     content: ''
@@ -381,7 +424,9 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
   align-items: center
   justify-content: center
   overflow: hidden
-  padding: 20px
+  overscroll-behavior: none
+  touch-action: none
+  padding: 20px 40px
 
   // Hide web sidebars entirely in arcade
   .web-sidebar
@@ -392,7 +437,7 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
     background: #d5e8ee
     border-radius: 12px 12px 0 0
     width: 100%
-    max-width: calc((100vh - 40px) * 9 / 16)
+    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 80px))
     flex-shrink: 0
 
   // Game area fills remaining space
@@ -400,12 +445,13 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
     background: #d5e8ee
     flex: 1
     width: 100%
-    max-width: calc((100vh - 40px) * 9 / 16)
+    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 80px))
     min-height: 0
     display: flex
     align-items: flex-start
     justify-content: center
     overflow: hidden
+    position: relative
 
   .arcade-game-inner
     flex-shrink: 0
@@ -424,7 +470,7 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
     background: #d5e8ee
     border-radius: 0 0 12px 12px
     width: 100%
-    max-width: calc((100vh - 40px) * 9 / 16)
+    max-width: min(calc((100vh - 40px) * 9 / 16), calc(100vw - 80px))
     flex-shrink: 0
 
 // --- Arcade stats bar ---
@@ -496,6 +542,46 @@ watch(() => gameStore.global.gameScreen, async (newVal) => {
 .arcade-bottom__levels
   display: flex
   gap: 8px
+
+// --- "You are here!" indicator ---
+.you-are-here
+  position: absolute
+  left: 50%
+  bottom: 18%
+  transform: translateX(-50%)
+  z-index: 60
+  text-align: center
+  pointer-events: none
+  animation: bounce-arrow 1s ease-in-out infinite
+
+  &__label
+    background: rgba(0, 0, 0, 0.85)
+    color: #D9FF69
+    font-size: 14px
+    font-weight: 700
+    padding: 6px 14px
+    border-radius: 8px
+    white-space: nowrap
+    margin-bottom: 4px
+
+  &__arrow
+    color: #D9FF69
+    font-size: 22px
+    line-height: 1
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5))
+
+@keyframes bounce-arrow
+  0%, 100%
+    transform: translateX(-50%) translateY(0)
+  50%
+    transform: translateX(-50%) translateY(-8px)
+
+// --- Fade transition ---
+.fade-enter-active, .fade-leave-active
+  transition: opacity 0.4s ease
+
+.fade-enter-from, .fade-leave-to
+  opacity: 0
 
 // --- Game Over overlay ---
 .gameover-overlay
