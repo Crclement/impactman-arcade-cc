@@ -28,7 +28,7 @@ const emit = defineEmits<{
 
 <style lang="sass" scoped>
 .gamepage-modal
-  @apply fixed top-0 left-0 w-screen h-screen z-20 flex items-center justify-center
+  @apply fixed top-0 left-0 w-screen h-screen z-[100] flex items-center justify-center
   .overlay
     background-color: rgba(30,61,144, 0.5)
     @apply absolute w-full h-full backdrop-blur

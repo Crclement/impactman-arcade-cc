@@ -58,5 +58,7 @@ const GoNextLevel = () => {
     Action: 'goNextLevel',
     SessionId: ''
   }))
+  // Immediately dismiss win overlay — don't wait for Unity
+  gameStore.$patch({ global: { gameScreen: 'playing' } })
 }
 </script>
