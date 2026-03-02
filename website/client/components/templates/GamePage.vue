@@ -104,13 +104,13 @@
       <div ref="gameInnerRef" :class="viewMode === 'arcade' ? 'arcade-game-inner' : 'web-game-inner'">
         <slot name="game"></slot>
         <MoleculesGamePageLoading />
+        <Transition name="fade">
+          <div v-if="showYouAreHere" class="you-are-here">
+            <div class="you-are-here__label">You are here!</div>
+            <div class="you-are-here__arrow">&#9660;</div>
+          </div>
+        </Transition>
       </div>
-      <Transition name="fade">
-        <div v-if="showYouAreHere" class="you-are-here">
-          <div class="you-are-here__label">You are here!</div>
-          <div class="you-are-here__arrow">&#9660;</div>
-        </div>
-      </Transition>
     </div>
 
     <!-- WEB: right sidebar -->
@@ -399,7 +399,7 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
     height: fit-content
 
   .web-game-inner
-    @apply hidden md:block w-fit
+    @apply hidden md:block w-fit relative
 
 .game-page
   @apply flex flex-col justify-center w-full relative
@@ -455,6 +455,7 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
 
   .arcade-game-inner
     flex-shrink: 0
+    position: relative
     // Dimensions and transform set dynamically via JS
 
     :deep(#unity-canvas)
@@ -544,10 +545,12 @@ watch(() => gameStore.global.gameScreen, async (newVal, oldVal) => {
   gap: 8px
 
 // --- "You are here!" indicator ---
+// Positioned in the 600x664 canvas coordinate space (inside gameInnerRef)
+// Boat spawns at ~y=584 from top (80px from bottom of 664px canvas)
 .you-are-here
   position: absolute
   left: 50%
-  bottom: 6%
+  bottom: 110px
   transform: translateX(-50%)
   z-index: 60
   text-align: center
